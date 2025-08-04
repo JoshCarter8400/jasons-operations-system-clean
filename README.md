@@ -1,6 +1,18 @@
-# Getting Started with Create React App
+# Jason's Landscaping Business System
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+This project is a React application for landscaping business management, built with [Create React App](https://github.com/facebook/create-react-app).
+
+## 🗄️ Database Testing (TEMPORARY)
+
+**Current Status:** Database foundation setup complete. A temporary "DB Test" component has been added to the navigation for testing database functionality.
+
+**To Test Database:**
+1. Run `npm start` (runs on port 3001)
+2. Navigate to "DB Test" in the top navigation
+3. Click "Run Database Tests" to verify database connection and operations
+4. Click "Create Test Data" to add sample data
+
+**Note:** The DatabaseTest component and navigation item should be removed after testing is complete.
 
 ## Available Scripts
 
@@ -9,7 +21,7 @@ In the project directory, you can run:
 ### `npm start`
 
 Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+Open [http://localhost:3001](http://localhost:3001) to view it in your browser (configured to run on port 3001).
 
 The page will reload when you make changes.\
 You may also see any lint errors in the console.
