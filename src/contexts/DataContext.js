@@ -14,8 +14,9 @@ export const useData = () => {
 
 export const DataProvider = ({ children }) => {
   const [businessData, setBusinessData] = useState(() => {
-    const saved = localStorage.getItem('jasonBusinessData');
-    return saved ? JSON.parse(saved) : { ...jasonBusinessData, invoices: initialInvoices };
+    // Clear localStorage to force fresh data load with 2025 dates
+    localStorage.removeItem('jasonBusinessData');
+    return { ...jasonBusinessData, invoices: initialInvoices };
   });
 
   useEffect(() => {

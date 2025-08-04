@@ -1,13 +1,14 @@
 import React from 'react';
+import { useData } from '../contexts/DataContext';
 import { 
-  businessInfo,
-  clients, 
   getPendingAmount,
   getTotalRevenue,
   getOverdueAmount 
 } from '../data/jasonData';
 
 function Dashboard() {
+  const { businessInfo, clients } = useData();
+  
   const totalClients = clients.length;
   const activeClients = clients.filter(client => client.status === 'Active').length;
   const pendingAmount = getPendingAmount();

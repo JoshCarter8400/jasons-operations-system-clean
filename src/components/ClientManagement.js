@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Routes, Route, Link, useNavigate, useParams } from 'react-router-dom';
 import { useData } from '../contexts/DataContext';
+import { formatDate } from '../utils/dateUtils';
 
 
 function ClientList() {
@@ -44,8 +45,8 @@ function ClientList() {
                       <p className="text-gray-600 mb-2">{client.email}</p>
                       <div className="flex gap-4 text-sm">
                         <span><strong>Service:</strong> {client.serviceType}</span>
-                        <span><strong>Last:</strong> {client.lastService}</span>
-                        <span><strong>Next:</strong> {client.nextService}</span>
+                        <span><strong>Last:</strong> {formatDate(client.lastService)}</span>
+                        <span><strong>Next:</strong> {formatDate(client.nextService)}</span>
                       </div>
                     </div>
                     <div className="flex flex-col gap-2">
@@ -340,11 +341,11 @@ function ClientDetail() {
                   </div>
                   <div>
                     <label className="text-sm font-medium text-gray-600">Last Service</label>
-                    <p className="text-gray-900">{client.lastService}</p>
+                    <p className="text-gray-900">{formatDate(client.lastService)}</p>
                   </div>
                   <div>
                     <label className="text-sm font-medium text-gray-600">Next Service</label>
-                    <p className="text-gray-900">{client.nextService}</p>
+                    <p className="text-gray-900">{formatDate(client.nextService)}</p>
                   </div>
                   <div>
                     <label className="text-sm font-medium text-gray-600">Status</label>
