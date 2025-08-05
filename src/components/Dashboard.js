@@ -1,19 +1,44 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useData } from '../contexts/DataContext';
 import { 
   getPendingAmount,
   getTotalRevenue,
   getOverdueAmount 
 } from '../data/jasonData';
+import { getEquipmentStats, getEquipmentDueForService } from '../utils/database';
 
 function Dashboard() {
   const { businessInfo, clients } = useData();
+  const [equipmentStats, setEquipmentStats] = useState({
+    totalEquipment: 0,
+    activeEquipment: 0,
+    needsService: 0,
+    conditionBreakdown: {}
+  });
+  const [equipmentDueForService, setEquipmentDueForService] = useState([]);
   
   const totalClients = clients.length;
   const activeClients = clients.filter(client => client.status === 'Active').length;
   const pendingAmount = getPendingAmount();
   const totalRevenue = getTotalRevenue();
   const overdueAmount = getOverdueAmount();
+
+  useEffect(() => {
+    loadEquipmentData();
+  }, []);
+
+  const loadEquipmentData = async () => {
+    try {
+      const [stats, dueForService] = await Promise.all([
+        getEquipmentStats(),
+        getEquipmentDueForService()
+      ]);
+      setEquipmentStats(stats);
+      setEquipmentDueForService(dueForService);
+    } catch (error) {
+      console.error('Error loading equipment data:', error);
+    }
+  };
   
   // Calculate jobs this week (clients with next service in the next 7 days)
   const today = new Date();
@@ -57,9 +82,9 @@ function Dashboard() {
             </div>
             <div className="card">
               <div className="card-content">
-                <h3>Pending Invoices</h3>
-                <p className="text-2xl font-bold text-secondary">${pendingAmount.toFixed(2)}</p>
-                <p className="text-sm text-gray-600">{overdueAmount > 0 ? `$${overdueAmount.toFixed(2)} overdue` : 'All current'}</p>
+                <h3>Active Equipment</h3>
+                <p className="text-2xl font-bold text-primary">{equipmentStats.activeEquipment}</p>
+                <p className="text-sm text-gray-600">{equipmentStats.totalEquipment} total</p>
               </div>
             </div>
             <div className="card">
@@ -78,7 +103,31 @@ function Dashboard() {
             </div>
           </div>
           
-          <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+          {equipmentStats.needsService > 0 && (
+            <div className="mt-4 bg-red-50 border border-red-200 rounded-md p-4">
+              <h4 className="font-semibold text-red-800 mb-2">⚠️ Equipment Service Alert</h4>
+              <p className="text-red-700">
+                {equipmentStats.needsService} piece{equipmentStats.needsService > 1 ? 's' : ''} of equipment need{equipmentStats.needsService === 1 ? 's' : ''} service.
+              </p>
+              {equipmentDueForService.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-red-700 font-medium">Equipment due for service:</p>
+                  <ul className="list-disc list-inside text-red-600 mt-1">
+                    {equipmentDueForService.slice(0, 3).map((equipment) => (
+                      <li key={equipment.id}>
+                        {equipment.brand} {equipment.model} - {equipment.currentHours - equipment.nextServiceDueHours} hours overdue
+                      </li>
+                    ))}
+                    {equipmentDueForService.length > 3 && (
+                      <li>...and {equipmentDueForService.length - 3} more</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+          
+          <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="card">
               <div className="card-content">
                 <h3 className="font-semibold mb-4">Service Areas</h3>
@@ -95,20 +144,54 @@ function Dashboard() {
             
             <div className="card">
               <div className="card-content">
-                <h3 className="font-semibold mb-4">Quick Stats</h3>
+                <h3 className="font-semibold mb-4">Equipment Status</h3>
                 <div className="space-y-3">
                   <div className="flex justify-between">
-                    <span>Total Invoiced</span>
-                    <span className="font-medium">${clients.reduce((sum, client) => sum + (client.totalInvoiced || 0), 0).toFixed(2)}</span>
+                    <span>Total Equipment</span>
+                    <span className="font-medium">{equipmentStats.totalEquipment}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Active Equipment</span>
+                    <span className="font-medium text-green-600">{equipmentStats.activeEquipment}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Needs Service</span>
+                    <span className={`font-medium ${equipmentStats.needsService > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      {equipmentStats.needsService}
+                    </span>
+                  </div>
+                  {Object.entries(equipmentStats.conditionBreakdown).map(([condition, count]) => (
+                    <div key={condition} className="flex justify-between text-sm">
+                      <span className="pl-2">{condition}</span>
+                      <span className="font-medium">{count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-content">
+                <h3 className="font-semibold mb-4">Financial Summary</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span>Pending Invoices</span>
+                    <span className="font-medium text-yellow-600">${pendingAmount.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Total Collected</span>
-                    <span className="font-medium">${clients.reduce((sum, client) => sum + (client.totalPaid || 0), 0).toFixed(2)}</span>
+                    <span className="font-medium text-green-600">${clients.reduce((sum, client) => sum + (client.totalPaid || 0), 0).toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Outstanding Balance</span>
                     <span className="font-medium text-yellow-600">${(clients.reduce((sum, client) => sum + (client.totalInvoiced || 0), 0) - clients.reduce((sum, client) => sum + (client.totalPaid || 0), 0)).toFixed(2)}</span>
                   </div>
+                  {overdueAmount > 0 && (
+                    <div className="flex justify-between">
+                      <span>Overdue Amount</span>
+                      <span className="font-medium text-red-600">${overdueAmount.toFixed(2)}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

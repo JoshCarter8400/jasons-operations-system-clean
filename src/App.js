@@ -5,25 +5,22 @@ import './App.css';
 import { DataProvider } from './contexts/DataContext';
 import Dashboard from './components/Dashboard';
 import ClientManagement from './components/ClientManagement';
+import EquipmentManagement from './components/EquipmentManagement';
 import Invoicing from './components/Invoicing';
 import RouteOptimization from './components/RouteOptimization';
 import DailySchedule from './components/DailySchedule';
 import BusinessSettings from './components/BusinessSettings';
 
-// TEMPORARY: Database Test Component for Foundation Verification
-// TODO: Remove this import and component usage after database testing is complete
-import DatabaseTest from './components/DatabaseTest';
 
 function Navigation() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
 
   const navItems = [
-    // TEMPORARY: Database Test - Remove after testing complete
-    { path: '/database-test', label: 'DB Test', icon: '🗄️' },
     { path: '/', label: 'Dashboard', icon: '🏠' },
     { path: '/schedule', label: 'Schedule', icon: '📅' },
     { path: '/clients', label: 'Clients', icon: '👥' },
+    { path: '/equipment', label: 'Equipment', icon: '🔧' },
     { path: '/invoicing', label: 'Invoicing', icon: '💰' },
     { path: '/routes', label: 'Routes', icon: '🗺️' },
     { path: '/settings', label: 'Settings', icon: '⚙️' }
@@ -73,11 +70,10 @@ function App() {
           <Navigation />
           <main className="main-content">
             <Routes>
-              {/* TEMPORARY: Database Test Route - Remove after testing complete */}
-              <Route path="/database-test" element={<DatabaseTest />} />
               <Route path="/" element={<Dashboard />} />
               <Route path="/schedule" element={<DailySchedule />} />
               <Route path="/clients/*" element={<ClientManagement />} />
+              <Route path="/equipment/*" element={<EquipmentManagement />} />
               <Route path="/invoicing/*" element={<Invoicing />} />
               <Route path="/routes" element={<RouteOptimization />} />
               <Route path="/settings" element={<BusinessSettings />} />

@@ -156,6 +156,72 @@ CREATE TRIGGER clients_fts_update AFTER UPDATE ON clients BEGIN
     VALUES (new.id, new.name, new.address, new.services, new.notes);
 END;
 
+-- Equipment types table
+CREATE TABLE equipment_types (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type_name TEXT NOT NULL UNIQUE, -- Mower, Trimmer, Blower, Chainsaw, Hedge Trimmer, Pole Saw, Pressure Washer, Trailer
+    requires_hours BOOLEAN DEFAULT false, -- Track hours for mowers primarily
+    service_interval_hours INTEGER, -- Service every X hours (50 for mowers)
+    active BOOLEAN DEFAULT true,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Equipment table - main entity for all landscaping equipment
+CREATE TABLE equipment (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    equipment_type TEXT NOT NULL,
+    brand TEXT NOT NULL,
+    model TEXT NOT NULL,
+    year INTEGER,
+    serial_number TEXT,
+    
+    -- Usage tracking
+    current_hours REAL DEFAULT 0.0,
+    condition TEXT DEFAULT 'Good', -- Excellent/Good/Fair/Needs Work
+    status TEXT DEFAULT 'Active', -- Active/Inactive/Out of Service
+    
+    -- Service tracking
+    last_service_date DATE,
+    last_service_hours REAL,
+    next_service_due_hours REAL,
+    
+    -- Equipment-specific fields (JSON for flexibility)
+    specifications TEXT, -- JSON: {barSize: "20\"", chainType: "3/8", psi: 3000, licensePlate: "ABC123"}
+    
+    -- Purchase/ownership info
+    purchase_date DATE,
+    purchase_price REAL,
+    warranty_expires DATE,
+    
+    -- Location and notes
+    current_location TEXT DEFAULT 'Shop',
+    notes TEXT DEFAULT '',
+    
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Foreign key constraints
+    FOREIGN KEY (equipment_type) REFERENCES equipment_types(type_name)
+);
+
+-- Equipment service history table
+CREATE TABLE equipment_service_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    equipment_id INTEGER NOT NULL,
+    service_date DATE NOT NULL,
+    service_type TEXT NOT NULL, -- Oil Change, Blade Sharpening, General Maintenance, Repair
+    hours_at_service REAL,
+    description TEXT NOT NULL,
+    cost REAL DEFAULT 0.0,
+    performed_by TEXT DEFAULT 'Jason',
+    next_service_due_hours REAL,
+    parts_replaced TEXT, -- JSON array of parts
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Foreign key constraints
+    FOREIGN KEY (equipment_id) REFERENCES equipment(id) ON DELETE CASCADE
+);
+
 -- Triggers to maintain calculated fields
 CREATE TRIGGER update_client_totals AFTER INSERT ON invoices BEGIN
     UPDATE clients 
@@ -197,3 +263,64 @@ END;
 CREATE TRIGGER update_invoices_timestamp AFTER UPDATE ON invoices BEGIN
     UPDATE invoices SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
+
+-- Equipment indexes for mobile performance optimization
+CREATE INDEX idx_equipment_type ON equipment(equipment_type);
+CREATE INDEX idx_equipment_brand ON equipment(brand);
+CREATE INDEX idx_equipment_status ON equipment(status);
+CREATE INDEX idx_equipment_condition ON equipment(condition);
+CREATE INDEX idx_equipment_hours ON equipment(current_hours);
+CREATE INDEX idx_equipment_next_service ON equipment(next_service_due_hours);
+
+-- Service History indexes
+CREATE INDEX idx_service_history_equipment_id ON equipment_service_history(equipment_id);
+CREATE INDEX idx_service_history_date ON equipment_service_history(service_date);
+CREATE INDEX idx_service_history_type ON equipment_service_history(service_type);
+
+-- Composite indexes for common equipment queries
+CREATE INDEX idx_equipment_type_status ON equipment(equipment_type, status);
+CREATE INDEX idx_equipment_brand_model ON equipment(brand, model);
+
+-- Equipment full-text search for mobile lookup
+CREATE VIRTUAL TABLE equipment_fts USING fts5(
+    brand, 
+    model, 
+    serial_number, 
+    notes,
+    content='equipment',
+    content_rowid='id'
+);
+
+-- Triggers to maintain equipment FTS index
+CREATE TRIGGER equipment_fts_insert AFTER INSERT ON equipment BEGIN
+    INSERT INTO equipment_fts(rowid, brand, model, serial_number, notes) 
+    VALUES (new.id, new.brand, new.model, new.serial_number, new.notes);
+END;
+
+CREATE TRIGGER equipment_fts_delete AFTER DELETE ON equipment BEGIN
+    INSERT INTO equipment_fts(equipment_fts, rowid, brand, model, serial_number, notes) 
+    VALUES('delete', old.id, old.brand, old.model, old.serial_number, old.notes);
+END;
+
+CREATE TRIGGER equipment_fts_update AFTER UPDATE ON equipment BEGIN
+    INSERT INTO equipment_fts(equipment_fts, rowid, brand, model, serial_number, notes) 
+    VALUES('delete', old.id, old.brand, old.model, old.serial_number, old.notes);
+    INSERT INTO equipment_fts(rowid, brand, model, serial_number, notes) 
+    VALUES (new.id, new.brand, new.model, new.serial_number, new.notes);
+END;
+
+-- Equipment timestamp triggers
+CREATE TRIGGER update_equipment_timestamp AFTER UPDATE ON equipment BEGIN
+    UPDATE equipment SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
+-- Insert default equipment types
+INSERT INTO equipment_types (type_name, requires_hours, service_interval_hours) VALUES
+('Mower', true, 50),
+('Trimmer', false, NULL),
+('Blower', false, NULL),
+('Chainsaw', false, NULL),
+('Hedge Trimmer', false, NULL),
+('Pole Saw', false, NULL),
+('Pressure Washer', false, NULL),
+('Trailer', false, NULL);
