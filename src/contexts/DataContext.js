@@ -1,6 +1,13 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { jasonBusinessData, invoices as initialInvoices } from '../data/jasonData';
 import { sendInvoiceEmail, sendPaymentReceiptEmail, createEmailNotification } from '../services/emailService';
+import {
+  getClients,
+  createClient as dbCreateClient,
+  updateClient as dbUpdateClient,
+  deleteClient as dbDeleteClient,
+  migrateFromLocalStorage
+} from '../utils/database';
 
 const DataContext = createContext();
 
@@ -14,13 +21,68 @@ export const useData = () => {
 
 export const DataProvider = ({ children }) => {
   const [businessData, setBusinessData] = useState(() => {
-    // Clear localStorage to force fresh data load with 2025 dates
-    localStorage.removeItem('jasonBusinessData');
-    return { ...jasonBusinessData, invoices: initialInvoices };
+    // Keep localStorage for non-client data (business info, services, payment methods, invoices)
+    // Only clients will be moved to database
+    const stored = localStorage.getItem('jasonBusinessData');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return { ...parsed, clients: [] }; // Empty clients array - will be loaded from database
+    }
+    return { ...jasonBusinessData, clients: [], invoices: initialInvoices };
   });
 
+  const [clients, setClients] = useState([]);
+  const [clientsLoaded, setClientsLoaded] = useState(false);
+  const [clientsLoading, setClientsLoading] = useState(true);
+
+  // Load clients from database on mount
   useEffect(() => {
-    localStorage.setItem('jasonBusinessData', JSON.stringify(businessData));
+    const loadClients = async () => {
+      try {
+        const dbClients = await getClients();
+        setClients(dbClients);
+        setClientsLoaded(true);
+        setClientsLoading(false);
+      } catch (error) {
+        console.error('Failed to load clients from database:', error);
+        // Try to migrate from localStorage if database fails
+        const stored = localStorage.getItem('jasonBusinessData');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed.clients && parsed.clients.length > 0) {
+            try {
+              console.log('Attempting to migrate clients to database...');
+              await migrateFromLocalStorage(parsed);
+              const dbClients = await getClients();
+              setClients(dbClients);
+              setClientsLoaded(true);
+        setClientsLoading(false);
+              console.log('Client migration successful');
+            } catch (migrationError) {
+              console.error('Migration failed, using localStorage data:', migrationError);
+              setClients(parsed.clients || []);
+              setClientsLoaded(true);
+        setClientsLoading(false);
+            }
+          } else {
+            setClients([]);
+            setClientsLoaded(true);
+        setClientsLoading(false);
+          }
+        }
+      }
+    };
+    
+    loadClients();
+  }, []);
+
+  // Save non-client data to localStorage
+  useEffect(() => {
+    const dataToStore = {
+      ...businessData,
+      clients: [] // Don't store clients in localStorage anymore
+    };
+    localStorage.setItem('jasonBusinessData', JSON.stringify(dataToStore));
   }, [businessData]);
 
   const updateBusinessInfo = (updates) => {
@@ -109,30 +171,34 @@ export const DataProvider = ({ children }) => {
     return true;
   };
 
-  const addClient = (clientData) => {
-    const newClient = {
-      ...clientData,
-      id: Math.max(...businessData.clients.map(c => c.id), 0) + 1,
-      createdDate: new Date().toISOString().split('T')[0],
-      totalInvoiced: 0,
-      totalPaid: 0,
-      status: 'Active'
-    };
-    setBusinessData(prev => ({
-      ...prev,
-      clients: [...prev.clients, newClient]
-    }));
-    return newClient;
+  const addClient = async (clientData) => {
+    try {
+      const newClient = await dbCreateClient({
+        ...clientData,
+        createdDate: new Date().toISOString().split('T')[0],
+        status: 'Active'
+      });
+      // Update local state
+      setClients(prev => [...prev, newClient]);
+      return newClient;
+    } catch (error) {
+      console.error('Failed to create client:', error);
+      throw error;
+    }
   };
 
-  const updateClient = (id, clientData) => {
-    setBusinessData(prev => ({
-      ...prev,
-      clients: prev.clients.map(client => 
-        client.id === parseInt(id) ? { ...client, ...clientData } : client
-      )
-    }));
-    return true;
+  const updateClient = async (id, clientData) => {
+    try {
+      const updatedClient = await dbUpdateClient(parseInt(id), clientData);
+      // Update local state
+      setClients(prev => prev.map(client => 
+        client.id === parseInt(id) ? updatedClient : client
+      ));
+      return true;
+    } catch (error) {
+      console.error('Failed to update client:', error);
+      throw error;
+    }
   };
 
   const addInvoice = (invoiceData) => {
@@ -258,7 +324,7 @@ export const DataProvider = ({ children }) => {
   };
 
   const getClientById = (id) => {
-    return businessData.clients.find(client => client.id === parseInt(id));
+    return clients.find(client => client.id === parseInt(id));
   };
 
   const getInvoiceById = (id) => {
@@ -289,10 +355,10 @@ export const DataProvider = ({ children }) => {
   };
 
   const searchClients = (searchTerm) => {
-    if (!searchTerm || searchTerm.trim() === '') return businessData.clients;
+    if (!searchTerm || searchTerm.trim() === '') return clients;
     
     const term = searchTerm.toLowerCase().trim();
-    return businessData.clients.filter(client =>
+    return clients.filter(client =>
       client.name.toLowerCase().includes(term) ||
       client.address.toLowerCase().includes(term) ||
       client.phone.toLowerCase().replace(/[\s\-()]/g, '').includes(term.replace(/[\s\-()]/g, '')) ||
@@ -303,7 +369,7 @@ export const DataProvider = ({ children }) => {
 
   const getClientsWithNoInvoices = () => {
     const clientsWithInvoices = new Set((businessData.invoices || []).map(inv => inv.clientId));
-    return businessData.clients.filter(client => !clientsWithInvoices.has(client.id));
+    return clients.filter(client => !clientsWithInvoices.has(client.id));
   };
 
   const generateOptimizedRoute = (addresses) => {
@@ -316,13 +382,40 @@ export const DataProvider = ({ children }) => {
     }));
   };
 
+  const refreshClients = async () => {
+    try {
+      setClientsLoading(true);
+      const dbClients = await getClients();
+      setClients(dbClients);
+      setClientsLoading(false);
+    } catch (error) {
+      console.error('Failed to refresh clients:', error);
+      setClientsLoading(false);
+      throw error;
+    }
+  };
+
   const value = {
     businessData,
     businessInfo: businessData.businessInfo,
     services: businessData.services,
     serviceAreas: businessData.businessInfo.serviceAreas,
     paymentMethods: businessData.paymentMethods,
-    clients: businessData.clients,
+    clients: clients,
+    clientsLoading,
+    clientsLoaded,
+    refreshClients,
+    deleteClient: async (id) => {
+      try {
+        await dbDeleteClient(parseInt(id));
+        // Update local state
+        setClients(prev => prev.filter(client => client.id !== parseInt(id)));
+        return true;
+      } catch (error) {
+        console.error('Failed to delete client:', error);
+        throw error;
+      }
+    },
     invoices: businessData.invoices || [],
     
     updateBusinessInfo,

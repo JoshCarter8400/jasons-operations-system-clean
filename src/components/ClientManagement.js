@@ -2,14 +2,44 @@ import React, { useState } from 'react';
 import { Routes, Route, Link, useNavigate, useParams } from 'react-router-dom';
 import { useData } from '../contexts/DataContext';
 import { formatDate } from '../utils/dateUtils';
+import { deleteClient } from '../utils/database.js';
 
 
 function ClientList() {
-  const { searchClients } = useData();
+  const { searchClients, clientsLoading, refreshClients } = useData();
   const [searchTerm, setSearchTerm] = useState('');
   const navigate = useNavigate();
 
+  const handleDelete = async (client) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${client.name}? This action cannot be undone.`
+    );
+    
+    if (confirmed) {
+      try {
+        await deleteClient(client.id);
+        console.log('Deleted client:', client.name);
+        await refreshClients();
+      } catch (error) {
+        console.error('Failed to delete client:', error);
+        alert('Failed to delete client. Please try again.');
+      }
+    }
+  };
+
   const filteredClients = searchClients(searchTerm);
+
+  if (clientsLoading) {
+    return (
+      <div className="card">
+        <div className="card-content">
+          <div className="flex justify-center items-center py-12">
+            <div className="text-gray-600">Loading clients...</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -68,6 +98,12 @@ function ClientList() {
                         >
                           Edit
                         </button>
+                        <button
+                          onClick={() => handleDelete(client)}
+                          className="btn btn-danger btn-sm"
+                        >
+                          Delete
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -90,16 +126,29 @@ function AddClient() {
     phone: '',
     email: '',
     serviceType: '',
+    services: '',
+    price: '',
     paymentMethod: '',
-    notes: ''
+    notes: '',
+    lastService: '',
+    nextService: ''
   });
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const newClient = addClient(formData);
-    console.log('Added client:', newClient);
-    navigate('/clients');
+    setLoading(true);
+    try {
+      const newClient = await addClient(formData);
+      console.log('Added client:', newClient);
+      navigate('/clients');
+    } catch (error) {
+      console.error('Failed to add client:', error);
+      alert('Failed to add client. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleChange = (e) => {
@@ -218,6 +267,56 @@ function AddClient() {
               </div>
             </div>
             
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium mb-2">Services Description *</label>
+                <input
+                  type="text"
+                  name="services"
+                  required
+                  value={formData.services}
+                  onChange={handleChange}
+                  className="w-full p-3 border border-gray-300 rounded-md"
+                  placeholder="e.g., Weekly lawn mowing and edging"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Price *</label>
+                <input
+                  type="text"
+                  name="price"
+                  required
+                  value={formData.price}
+                  onChange={handleChange}
+                  className="w-full p-3 border border-gray-300 rounded-md"
+                  placeholder="e.g., $50/visit or $200/month"
+                />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium mb-2">Last Service Date (optional)</label>
+                <input
+                  type="date"
+                  name="lastService"
+                  value={formData.lastService}
+                  onChange={handleChange}
+                  className="w-full p-3 border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Next Service Date (optional)</label>
+                <input
+                  type="date"
+                  name="nextService"
+                  value={formData.nextService}
+                  onChange={handleChange}
+                  className="w-full p-3 border border-gray-300 rounded-md"
+                />
+              </div>
+            </div>
+            
             <div>
               <label className="block text-sm font-medium mb-2">Notes</label>
               <textarea
@@ -231,13 +330,14 @@ function AddClient() {
             </div>
             
             <div className="flex gap-4">
-              <button type="submit" className="btn btn-primary">
-                Add Client
+              <button type="submit" className="btn btn-primary" disabled={loading}>
+                {loading ? 'Adding...' : 'Add Client'}
               </button>
               <button
                 type="button"
                 onClick={() => navigate('/clients')}
                 className="btn btn-outline"
+                disabled={loading}
               >
                 Cancel
               </button>
@@ -336,6 +436,14 @@ function ClientDetail() {
                     <p className="text-gray-900">{client.serviceType}</p>
                   </div>
                   <div>
+                    <label className="text-sm font-medium text-gray-600">Services Description</label>
+                    <p className="text-gray-900">{client.services}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-600">Price</label>
+                    <p className="text-gray-900">{client.price}</p>
+                  </div>
+                  <div>
                     <label className="text-sm font-medium text-gray-600">Payment Method</label>
                     <p className="text-gray-900">{client.paymentMethod}</p>
                   </div>
@@ -394,10 +502,15 @@ function EditClient() {
     phone: client?.phone || '',
     email: client?.email || '',
     serviceType: client?.serviceType || '',
+    services: client?.services || '',
+    price: client?.price || '',
     paymentMethod: client?.paymentMethod || '',
     status: client?.status || 'Active',
-    notes: client?.notes || ''
+    notes: client?.notes || '',
+    lastService: client?.lastService || '',
+    nextService: client?.nextService || ''
   });
+  const [loading, setLoading] = useState(false);
 
   if (!client) {
     return (
@@ -412,12 +525,18 @@ function EditClient() {
     );
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const success = updateClient(parseInt(id), formData);
-    if (success) {
+    setLoading(true);
+    try {
+      await updateClient(parseInt(id), formData);
       console.log('Updated client:', formData);
       navigate(`/clients/${id}`);
+    } catch (error) {
+      console.error('Failed to update client:', error);
+      alert('Failed to update client. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -552,6 +671,56 @@ function EditClient() {
               </div>
             </div>
             
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium mb-2">Services Description *</label>
+                <input
+                  type="text"
+                  name="services"
+                  required
+                  value={formData.services}
+                  onChange={handleChange}
+                  className="w-full p-3 border border-gray-300 rounded-md"
+                  placeholder="e.g., Weekly lawn mowing and edging"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Price *</label>
+                <input
+                  type="text"
+                  name="price"
+                  required
+                  value={formData.price}
+                  onChange={handleChange}
+                  className="w-full p-3 border border-gray-300 rounded-md"
+                  placeholder="e.g., $50/visit or $200/month"
+                />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium mb-2">Last Service Date (optional)</label>
+                <input
+                  type="date"
+                  name="lastService"
+                  value={formData.lastService}
+                  onChange={handleChange}
+                  className="w-full p-3 border border-gray-300 rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Next Service Date (optional)</label>
+                <input
+                  type="date"
+                  name="nextService"
+                  value={formData.nextService}
+                  onChange={handleChange}
+                  className="w-full p-3 border border-gray-300 rounded-md"
+                />
+              </div>
+            </div>
+            
             <div>
               <label className="block text-sm font-medium mb-2">Notes</label>
               <textarea
@@ -565,13 +734,14 @@ function EditClient() {
             </div>
             
             <div className="flex gap-4">
-              <button type="submit" className="btn btn-primary">
-                Update Client
+              <button type="submit" className="btn btn-primary" disabled={loading}>
+                {loading ? 'Updating...' : 'Update Client'}
               </button>
               <button
                 type="button"
                 onClick={() => navigate(`/clients/${id}`)}
                 className="btn btn-outline"
+                disabled={loading}
               >
                 Cancel
               </button>

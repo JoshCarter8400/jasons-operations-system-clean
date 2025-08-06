@@ -24,7 +24,7 @@ const DEBUG = process.env.REACT_APP_DEBUG_DATABASE === 'true';
 let db = null;
 
 /**
- * Initialize database connection
+ * Initialize database connection and create tables
  * @returns {Promise<Object>} Database client instance
  */
 export const initializeDatabase = async () => {
@@ -58,8 +58,12 @@ export const initializeDatabase = async () => {
       await db.execute('SELECT 1');
       
       console.log('✅ Database connection verified successfully');
+      
+      // Initialize schema without foreign key constraints
+      await initializeSchema();
+      
       if (DEBUG) {
-        console.log('✅ Database connection verified');
+        console.log('✅ Database connection and schema initialized');
       }
     }
     return db;
@@ -67,6 +71,127 @@ export const initializeDatabase = async () => {
     console.error('❌ Failed to initialize database:', error);
     console.error('DB_CONFIG:', DB_CONFIG);
     throw error;
+  }
+};
+
+/**
+ * Initialize database schema without foreign key constraints
+ * @returns {Promise<void>}
+ */
+const initializeSchema = async () => {
+  const schemaQueries = [
+    // Business configuration table
+    `CREATE TABLE IF NOT EXISTS business_settings (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      email TEXT NOT NULL,
+      tax_rate REAL NOT NULL DEFAULT 0.075,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+    
+    // Service areas table
+    `CREATE TABLE IF NOT EXISTS service_areas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      area_name TEXT NOT NULL UNIQUE,
+      active BOOLEAN DEFAULT true,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+    
+    // Service types table
+    `CREATE TABLE IF NOT EXISTS service_types (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      price_range TEXT NOT NULL,
+      default_rate REAL NOT NULL,
+      active BOOLEAN DEFAULT true,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+    
+    // Payment methods table
+    `CREATE TABLE IF NOT EXISTS payment_methods (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      method_name TEXT NOT NULL UNIQUE,
+      active BOOLEAN DEFAULT true,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+    
+    // Clients table WITHOUT foreign key constraints
+    `CREATE TABLE IF NOT EXISTS clients (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      address TEXT NOT NULL,
+      area TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      email TEXT DEFAULT '',
+      service_type TEXT NOT NULL,
+      services TEXT NOT NULL,
+      price TEXT NOT NULL,
+      payment_method TEXT NOT NULL,
+      notes TEXT DEFAULT '',
+      status TEXT DEFAULT 'Active',
+      last_service DATE,
+      next_service DATE,
+      created_date DATE NOT NULL,
+      total_invoiced REAL DEFAULT 0.0,
+      total_paid REAL DEFAULT 0.0,
+      last_scheduled TEXT DEFAULT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+    
+    // Indexes for performance
+    `CREATE INDEX IF NOT EXISTS idx_clients_area ON clients(area)`,
+    `CREATE INDEX IF NOT EXISTS idx_clients_service_type ON clients(service_type)`,
+    `CREATE INDEX IF NOT EXISTS idx_clients_status ON clients(status)`,
+    `CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name)`
+  ];
+  
+  for (const query of schemaQueries) {
+    await db.execute(query);
+  }
+  
+  // Initialize default data for dropdowns
+  await initializeDefaultData();
+  
+  if (DEBUG) {
+    console.log('✅ Database schema initialized without foreign key constraints');
+  }
+};
+
+/**
+ * Initialize default data for dropdowns
+ * @returns {Promise<void>}
+ */
+const initializeDefaultData = async () => {
+  // Default service areas
+  const defaultAreas = ['North End', 'South End', 'Downtown', 'Westside', 'Eastside'];
+  for (const area of defaultAreas) {
+    await db.execute(`INSERT OR IGNORE INTO service_areas (area_name) VALUES (?)`, [area]);
+  }
+  
+  // Default service types
+  const defaultServices = [
+    { name: 'Lawn Mowing', price_range: '$30-60', default_rate: 45 },
+    { name: 'Hedge Trimming', price_range: '$40-80', default_rate: 60 },
+    { name: 'Garden Maintenance', price_range: '$50-100', default_rate: 75 },
+    { name: 'Tree Services', price_range: '$100-300', default_rate: 200 },
+    { name: 'Landscaping', price_range: '$200-1000', default_rate: 500 }
+  ];
+  for (const service of defaultServices) {
+    await db.execute(`INSERT OR IGNORE INTO service_types (name, price_range, default_rate) VALUES (?, ?, ?)`, 
+      [service.name, service.price_range, service.default_rate]);
+  }
+  
+  // Default payment methods
+  const defaultPayments = ['Cash', 'Check', 'E-Transfer', 'Credit Card', 'PayPal'];
+  for (const method of defaultPayments) {
+    await db.execute(`INSERT OR IGNORE INTO payment_methods (method_name) VALUES (?)`, [method]);
+  }
+  
+  if (DEBUG) {
+    console.log('✅ Default data initialized');
   }
 };
 
@@ -297,19 +422,24 @@ export const createClient = async (clientData) => {
   const {
     name, address, area, phone, email = '', serviceType, services,
     price, paymentMethod, notes = '', status = 'Active',
-    lastService, nextService, createdDate, lastScheduled
+    lastService = null, nextService = null, createdDate
   } = clientData;
   
+  // Set created_date to current date if not provided
+  const finalCreatedDate = createdDate || new Date().toISOString().split('T')[0];
+  
+  // Only include fields that are provided by the form
+  // Let database defaults handle: total_invoiced, total_paid, last_scheduled, created_at, updated_at
   const result = await execute(`
     INSERT INTO clients (
       name, address, area, phone, email, service_type, services,
       price, payment_method, notes, status, last_service, next_service,
-      created_date, last_scheduled
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      created_date
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
-    name, address, area, phone, email, serviceType, services,
-    price, paymentMethod, notes, status, lastService, nextService,
-    createdDate, lastScheduled ? JSON.stringify(lastScheduled) : null
+    name, address, area, phone, email || '', serviceType, services,
+    price, paymentMethod, notes || '', status, lastService, nextService,
+    finalCreatedDate
   ]);
   
   return await getClientById(result.lastInsertRowid);
@@ -794,8 +924,8 @@ export const migrateFromLocalStorage = async (localStorageData) => {
             phone: client.phone,
             email: client.email || '',
             serviceType: client.serviceType,
-            services: client.services,
-            price: client.price,
+            services: client.services || `${client.serviceType} service`,
+            price: client.price || 'Price TBD',
             paymentMethod: client.paymentMethod,
             notes: client.notes || '',
             status: client.status || 'Active',
