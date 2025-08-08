@@ -3,6 +3,7 @@ import { Routes, Route, Link, useNavigate, useParams } from 'react-router-dom';
 import { useData } from '../contexts/DataContext';
 import { formatDate } from '../utils/dateUtils';
 import { deleteClient } from '../utils/database.js';
+import { generateRecurringAppointmentsForClient } from '../utils/databaseHelpers';
 
 
 function ClientList() {
@@ -131,7 +132,11 @@ function AddClient() {
     paymentMethod: '',
     notes: '',
     lastService: '',
-    nextService: ''
+    nextService: '',
+    recurring_frequency: '',
+    recurring_day: '',
+    recurring_time: '09:00',
+    recurring_active: false
   });
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -142,6 +147,19 @@ function AddClient() {
     try {
       const newClient = await addClient(formData);
       console.log('Added client:', newClient);
+      
+      // Generate recurring appointments if the client has recurring settings
+      if (formData.recurring_frequency && formData.recurring_day && formData.recurring_active) {
+        try {
+          console.log('🔄 Auto-generating recurring appointments for new client...');
+          await generateRecurringAppointmentsForClient(newClient.id);
+          console.log('✅ Generated 2-year recurring appointments for', newClient.name);
+        } catch (error) {
+          console.error('❌ Failed to generate recurring appointments:', error);
+          alert(`Client added successfully, but failed to generate recurring appointments. You can set up the schedule later in the client edit page.`);
+        }
+      }
+      
       navigate('/clients');
     } catch (error) {
       console.error('Failed to add client:', error);
@@ -152,9 +170,10 @@ function AddClient() {
   };
 
   const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
+      [name]: type === 'checkbox' ? checked : value
     });
   };
 
@@ -327,6 +346,86 @@ function AddClient() {
                 className="w-full p-3 border border-gray-300 rounded-md"
                 placeholder="Any special instructions or notes about this client..."
               />
+            </div>
+            
+            {/* Recurring Schedule Section */}
+            <div className="border-t pt-6">
+              <h3 className="text-lg font-semibold mb-4">Recurring Schedule (Optional)</h3>
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <input
+                    type="checkbox"
+                    id="recurring_active"
+                    name="recurring_active"
+                    checked={formData.recurring_active}
+                    onChange={handleChange}
+                    className="rounded"
+                  />
+                  <label htmlFor="recurring_active" className="text-sm font-medium">
+                    Enable automatic recurring appointments (generates 2 years of appointments)
+                  </label>
+                </div>
+                
+                {formData.recurring_active && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pl-6">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Frequency *</label>
+                      <select
+                        name="recurring_frequency"
+                        value={formData.recurring_frequency}
+                        onChange={handleChange}
+                        className="w-full p-3 border border-gray-300 rounded-md"
+                        required={formData.recurring_active}
+                      >
+                        <option value="">Select frequency</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="bi-weekly">Bi-Weekly</option>
+                        <option value="monthly">Monthly (3rd Wed/Thu)</option>
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Day of Week *</label>
+                      <select
+                        name="recurring_day"
+                        value={formData.recurring_day}
+                        onChange={handleChange}
+                        className="w-full p-3 border border-gray-300 rounded-md"
+                        required={formData.recurring_active}
+                      >
+                        <option value="">Select day</option>
+                        <option value="Monday">Monday</option>
+                        <option value="Tuesday">Tuesday</option>
+                        <option value="Wednesday">Wednesday</option>
+                        <option value="Thursday">Thursday</option>
+                        <option value="Friday">Friday</option>
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Start Time *</label>
+                      <input
+                        type="time"
+                        name="recurring_time"
+                        value={formData.recurring_time}
+                        onChange={handleChange}
+                        className="w-full p-3 border border-gray-300 rounded-md"
+                        required={formData.recurring_active}
+                      />
+                    </div>
+                  </div>
+                )}
+                
+                {formData.recurring_active && (
+                  <div className="pl-6 text-sm text-gray-600 bg-blue-50 p-3 rounded-md">
+                    <strong>🔄 Automatic Scheduling:</strong><br/>
+                    • <strong>Weekly:</strong> 104 appointments (every {formData.recurring_day || '[day]'} for 2 years)<br/>
+                    • <strong>Bi-Weekly:</strong> 52 appointments (every other {formData.recurring_day || '[day]'} for 2 years)<br/>
+                    • <strong>Monthly:</strong> 24 appointments (3rd {formData.recurring_day || '[day]'} of each month for 2 years)<br/>
+                    Once saved, appointments will be automatically generated and can be individually managed (reschedule, complete, cancel) in the Daily Schedule.
+                  </div>
+                )}
+              </div>
             </div>
             
             <div className="flex gap-4">
