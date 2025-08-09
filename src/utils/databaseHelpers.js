@@ -1,6 +1,7 @@
 /**
  * Database Helper Functions
  * Handles database operations for Jason's Landscaping System
+ * Includes invoice-specific operations for the collecting invoice workflow
  */
 
 import { createClient as createLibSQLClient } from '@libsql/client';
@@ -780,5 +781,423 @@ export async function testDatabaseConnection() {
   } catch (error) {
     console.log('❌ Test failed:', error.message);
     return { success: false, error: error.message };
+  }
+}
+
+// ========================================
+// INVOICE MANAGEMENT FUNCTIONS
+// ========================================
+
+/**
+ * Inserts a new invoice with auto-generated invoice number
+ * The database trigger will automatically generate the invoice number
+ * @param {Object} invoiceData - Invoice data
+ * @returns {Promise<Object>} Created invoice with generated number
+ */
+export async function insertInvoiceWithNumber(invoiceData) {
+  try {
+    const db = createLibSQLClient(config);
+    
+    const result = await db.execute({
+      sql: `
+        INSERT INTO invoices (
+          client_id, client_name, date, due_date, status, 
+          subtotal, tax, total, notes, sent_date, paid_date, payment_method
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      args: [
+        invoiceData.client_id,
+        invoiceData.client_name,
+        invoiceData.date,
+        invoiceData.due_date,
+        invoiceData.status || 'collecting',
+        invoiceData.subtotal || 0.0,
+        invoiceData.tax || 0.0,
+        invoiceData.total || 0.0,
+        invoiceData.notes || '',
+        invoiceData.sent_date || null,
+        invoiceData.paid_date || null,
+        invoiceData.payment_method || null
+      ]
+    });
+
+    // Get the created invoice with the auto-generated invoice number
+    const createdInvoice = await db.execute({
+      sql: `SELECT * FROM invoices WHERE id = ?`,
+      args: [result.lastInsertRowid]
+    });
+
+    return createdInvoice.rows[0];
+  } catch (error) {
+    console.error('Error inserting invoice:', error);
+    throw new Error('Failed to create invoice');
+  }
+}
+
+/**
+ * Updates an invoice status and related fields
+ * @param {number} invoiceId - Invoice ID
+ * @param {string} status - New status (collecting/sent/paid/overdue)
+ * @param {Object} additionalFields - Additional fields to update
+ * @returns {Promise<boolean>} Success status
+ */
+export async function updateInvoiceStatus(invoiceId, status, additionalFields = {}) {
+  try {
+    const db = createLibSQLClient(config);
+    
+    const fields = ['status = ?'];
+    const values = [status];
+
+    // Add additional fields
+    Object.entries(additionalFields).forEach(([key, value]) => {
+      fields.push(`${key} = ?`);
+      values.push(value);
+    });
+
+    values.push(invoiceId);
+
+    await db.execute({
+      sql: `UPDATE invoices SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      args: values
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Error updating invoice status:', error);
+    throw new Error('Failed to update invoice status');
+  }
+}
+
+/**
+ * Updates specific fields on an invoice
+ * @param {number} invoiceId - Invoice ID
+ * @param {Object} fields - Fields to update
+ * @returns {Promise<boolean>} Success status
+ */
+export async function updateInvoiceFields(invoiceId, fields) {
+  try {
+    const db = createLibSQLClient(config);
+    
+    const fieldNames = Object.keys(fields);
+    const fieldValues = Object.values(fields);
+
+    const setClause = fieldNames.map(field => `${field} = ?`).join(', ');
+    
+    await db.execute({
+      sql: `UPDATE invoices SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      args: [...fieldValues, invoiceId]
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Error updating invoice fields:', error);
+    throw new Error('Failed to update invoice fields');
+  }
+}
+
+/**
+ * Gets a complete invoice with line items
+ * @param {number} invoiceId - Invoice ID
+ * @returns {Promise<Object|null>} Invoice with line items or null
+ */
+export async function getInvoiceWithLineItems(invoiceId) {
+  try {
+    const db = createLibSQLClient(config);
+    
+    // Get invoice
+    const invoiceResult = await db.execute({
+      sql: `SELECT * FROM invoices WHERE id = ?`,
+      args: [invoiceId]
+    });
+
+    if (invoiceResult.rows.length === 0) {
+      return null;
+    }
+
+    const invoice = invoiceResult.rows[0];
+
+    // Get line items
+    const lineItemsResult = await db.execute({
+      sql: `
+        SELECT id, description, quantity, rate, amount, created_at 
+        FROM invoice_line_items 
+        WHERE invoice_id = ? 
+        ORDER BY created_at
+      `,
+      args: [invoiceId]
+    });
+
+    return {
+      ...invoice,
+      line_items: lineItemsResult.rows
+    };
+  } catch (error) {
+    console.error('Error getting invoice with line items:', error);
+    throw new Error('Failed to retrieve invoice');
+  }
+}
+
+/**
+ * Gets an invoice by invoice number
+ * @param {string} invoiceNumber - Invoice number (INV-YYYY-NNNN)
+ * @returns {Promise<Object|null>} Invoice object or null
+ */
+export async function getInvoiceByNumber(invoiceNumber) {
+  try {
+    const db = createLibSQLClient(config);
+    
+    const result = await db.execute({
+      sql: `SELECT * FROM invoices WHERE invoice_number = ?`,
+      args: [invoiceNumber]
+    });
+
+    return result.rows.length > 0 ? result.rows[0] : null;
+  } catch (error) {
+    console.error('Error getting invoice by number:', error);
+    throw new Error('Failed to retrieve invoice by number');
+  }
+}
+
+/**
+ * Gets all invoices for a client
+ * @param {number} clientId - Client ID
+ * @param {string} status - Optional status filter
+ * @returns {Promise<Array>} Array of invoices
+ */
+export async function getClientInvoices(clientId, status = null) {
+  try {
+    const db = createLibSQLClient(config);
+    
+    let sql = `SELECT * FROM invoices WHERE client_id = ?`;
+    let args = [clientId];
+
+    if (status) {
+      sql += ` AND status = ?`;
+      args.push(status);
+    }
+
+    sql += ` ORDER BY date DESC`;
+
+    const result = await db.execute({ sql, args });
+    return result.rows;
+  } catch (error) {
+    console.error('Error getting client invoices:', error);
+    throw new Error('Failed to retrieve client invoices');
+  }
+}
+
+/**
+ * Inserts a line item for an invoice
+ * @param {number} invoiceId - Invoice ID
+ * @param {Object} lineItemData - Line item data
+ * @returns {Promise<Object>} Created line item
+ */
+export async function insertInvoiceLineItem(invoiceId, lineItemData) {
+  try {
+    const db = createLibSQLClient(config);
+    
+    const result = await db.execute({
+      sql: `
+        INSERT INTO invoice_line_items (invoice_id, description, quantity, rate, amount)
+        VALUES (?, ?, ?, ?, ?)
+      `,
+      args: [
+        invoiceId,
+        lineItemData.description,
+        lineItemData.quantity || 1.0,
+        lineItemData.rate,
+        lineItemData.amount
+      ]
+    });
+
+    // Return the created line item
+    const createdItem = await db.execute({
+      sql: `SELECT * FROM invoice_line_items WHERE id = ?`,
+      args: [result.lastInsertRowid]
+    });
+
+    return createdItem.rows[0];
+  } catch (error) {
+    console.error('Error inserting line item:', error);
+    throw new Error('Failed to create line item');
+  }
+}
+
+/**
+ * Deletes multiple line items
+ * @param {Array} lineItemIds - Array of line item IDs
+ * @returns {Promise<boolean>} Success status
+ */
+export async function deleteInvoiceLineItems(lineItemIds) {
+  try {
+    if (lineItemIds.length === 0) return true;
+
+    const db = createLibSQLClient(config);
+    
+    const placeholders = lineItemIds.map(() => '?').join(',');
+    await db.execute({
+      sql: `DELETE FROM invoice_line_items WHERE id IN (${placeholders})`,
+      args: lineItemIds
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Error deleting line items:', error);
+    throw new Error('Failed to delete line items');
+  }
+}
+
+/**
+ * Recalculates and updates invoice totals based on line items
+ * @param {number} invoiceId - Invoice ID
+ * @param {number} taxRate - Tax rate (default 7.5%)
+ * @returns {Promise<Object>} Updated totals
+ */
+export async function updateInvoiceTotals(invoiceId, taxRate = 0.075) {
+  try {
+    const db = createLibSQLClient(config);
+    
+    // Calculate totals from line items
+    const result = await db.execute({
+      sql: `SELECT COALESCE(SUM(amount), 0) as subtotal FROM invoice_line_items WHERE invoice_id = ?`,
+      args: [invoiceId]
+    });
+
+    const subtotal = result.rows[0].subtotal;
+    const tax = subtotal * taxRate;
+    const total = subtotal + tax;
+
+    // Update invoice totals
+    await db.execute({
+      sql: `
+        UPDATE invoices 
+        SET subtotal = ?, tax = ?, total = ?, updated_at = CURRENT_TIMESTAMP 
+        WHERE id = ?
+      `,
+      args: [subtotal, tax, total, invoiceId]
+    });
+
+    return { subtotal, tax, total };
+  } catch (error) {
+    console.error('Error updating invoice totals:', error);
+    throw new Error('Failed to update invoice totals');
+  }
+}
+
+/**
+ * Gets overdue invoices (sent but not paid, past due date)
+ * @returns {Promise<Array>} Array of overdue invoices
+ */
+export async function getOverdueInvoicesList() {
+  try {
+    const db = createLibSQLClient(config);
+    const today = new Date().toISOString().split('T')[0];
+    
+    const result = await db.execute({
+      sql: `
+        SELECT * FROM invoices 
+        WHERE status = 'sent' 
+          AND due_date < ? 
+        ORDER BY due_date ASC
+      `,
+      args: [today]
+    });
+
+    return result.rows;
+  } catch (error) {
+    console.error('Error getting overdue invoices:', error);
+    throw new Error('Failed to retrieve overdue invoices');
+  }
+}
+
+/**
+ * Gets invoice statistics
+ * @param {number} year - Optional year filter
+ * @returns {Promise<Object>} Invoice statistics
+ */
+export async function getInvoiceStats(year = null) {
+  try {
+    const db = createLibSQLClient(config);
+    const currentYear = year || new Date().getFullYear();
+    
+    // Get basic stats
+    const statsResult = await db.execute({
+      sql: `
+        SELECT 
+          status,
+          COUNT(*) as count,
+          COALESCE(SUM(total), 0) as total_amount
+        FROM invoices 
+        WHERE substr(invoice_number, 5, 4) = ?
+        GROUP BY status
+      `,
+      args: [currentYear.toString()]
+    });
+
+    // Get overall totals
+    const totalResult = await db.execute({
+      sql: `
+        SELECT 
+          COUNT(*) as total_invoices,
+          COALESCE(SUM(total), 0) as total_revenue,
+          COALESCE(AVG(total), 0) as average_invoice_amount
+        FROM invoices 
+        WHERE substr(invoice_number, 5, 4) = ?
+      `,
+      args: [currentYear.toString()]
+    });
+
+    const stats = {
+      year: currentYear,
+      totalInvoices: totalResult.rows[0].total_invoices,
+      totalRevenue: totalResult.rows[0].total_revenue,
+      averageInvoiceAmount: totalResult.rows[0].average_invoice_amount,
+      byStatus: {}
+    };
+
+    // Process by status
+    statsResult.rows.forEach(row => {
+      stats.byStatus[row.status] = {
+        count: row.count,
+        totalAmount: row.total_amount
+      };
+    });
+
+    return stats;
+  } catch (error) {
+    console.error('Error getting invoice stats:', error);
+    throw new Error('Failed to retrieve invoice statistics');
+  }
+}
+
+/**
+ * Gets client invoice summary (for client management page)
+ * @param {number} clientId - Client ID
+ * @returns {Promise<Object>} Client invoice summary
+ */
+export async function getClientInvoiceSummary(clientId) {
+  try {
+    const db = createLibSQLClient(config);
+    
+    const result = await db.execute({
+      sql: `
+        SELECT 
+          COUNT(*) as total_invoices,
+          COUNT(CASE WHEN status = 'collecting' THEN 1 END) as collecting_count,
+          COUNT(CASE WHEN status = 'sent' THEN 1 END) as sent_count,
+          COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_count,
+          COALESCE(SUM(total), 0) as total_invoiced,
+          COALESCE(SUM(CASE WHEN status = 'paid' THEN total END), 0) as total_paid,
+          COALESCE(SUM(CASE WHEN status = 'sent' THEN total END), 0) as outstanding_amount
+        FROM invoices 
+        WHERE client_id = ?
+      `,
+      args: [clientId]
+    });
+
+    return result.rows[0];
+  } catch (error) {
+    console.error('Error getting client invoice summary:', error);
+    throw new Error('Failed to retrieve client invoice summary');
   }
 }

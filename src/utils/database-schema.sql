@@ -68,14 +68,26 @@ CREATE TABLE clients (
     FOREIGN KEY (payment_method) REFERENCES payment_methods(method_name)
 );
 
+-- Invoice counter table for unique numbering
+CREATE TABLE invoice_counter (
+    id INTEGER PRIMARY KEY,
+    year INTEGER NOT NULL,
+    last_number INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    
+    UNIQUE(year)
+);
+
 -- Invoices table
 CREATE TABLE invoices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_number TEXT UNIQUE NOT NULL,
     client_id INTEGER NOT NULL,
     client_name TEXT NOT NULL, -- Denormalized for quick access
     date DATE NOT NULL,
     due_date DATE NOT NULL,
-    status TEXT NOT NULL DEFAULT 'Draft', -- Draft/Sent/Paid/Overdue
+    status TEXT NOT NULL DEFAULT 'collecting', -- collecting/sent/paid/overdue
     subtotal REAL NOT NULL DEFAULT 0.0,
     tax REAL NOT NULL DEFAULT 0.0,
     total REAL NOT NULL DEFAULT 0.0,
@@ -83,12 +95,20 @@ CREATE TABLE invoices (
     sent_date DATE,
     paid_date DATE,
     payment_method TEXT,
+    receipt_sent_date DATE,
+    receipt_delivery_method TEXT CHECK (receipt_delivery_method IN ('email', 'text', 'none') OR receipt_delivery_method IS NULL),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     
     -- Foreign key constraints
     FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
-    FOREIGN KEY (payment_method) REFERENCES payment_methods(method_name)
+    FOREIGN KEY (payment_method) REFERENCES payment_methods(method_name),
+    
+    -- Check constraints for invoice status workflow
+    CHECK (status IN ('collecting', 'sent', 'paid', 'overdue')),
+    
+    -- Check constraint for invoice number format
+    CHECK (invoice_number LIKE 'INV-%-%' AND LENGTH(invoice_number) = 13)
 );
 
 -- Invoice line items table (normalized from localStorage structure)
@@ -118,6 +138,7 @@ CREATE INDEX idx_invoices_client_id ON invoices(client_id);
 CREATE INDEX idx_invoices_status ON invoices(status);
 CREATE INDEX idx_invoices_date ON invoices(date);
 CREATE INDEX idx_invoices_due_date ON invoices(due_date);
+CREATE INDEX idx_invoices_invoice_number ON invoices(invoice_number);
 
 -- Line items index
 CREATE INDEX idx_line_items_invoice_id ON invoice_line_items(invoice_id);
@@ -264,6 +285,44 @@ CREATE TRIGGER update_invoices_timestamp AFTER UPDATE ON invoices BEGIN
     UPDATE invoices SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 
+-- Invoice numbering triggers
+CREATE TRIGGER generate_invoice_number BEFORE INSERT ON invoices
+WHEN NEW.invoice_number IS NULL OR NEW.invoice_number = ''
+BEGIN
+    -- Get current year
+    SELECT CASE
+        WHEN (SELECT COUNT(*) FROM invoice_counter WHERE year = strftime('%Y', 'now')) = 0
+        THEN 
+            -- Insert new year counter if it doesn't exist
+            (INSERT INTO invoice_counter (year, last_number) VALUES (strftime('%Y', 'now'), 1))
+        ELSE
+            -- Increment existing counter
+            (UPDATE invoice_counter 
+             SET last_number = last_number + 1,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE year = strftime('%Y', 'now'))
+    END;
+    
+    -- Set the invoice number in format INV-YYYY-NNNN
+    UPDATE NEW SET invoice_number = 'INV-' || strftime('%Y', 'now') || '-' || 
+        printf('%04d', (SELECT last_number FROM invoice_counter WHERE year = strftime('%Y', 'now')));
+END;
+
+-- Validate invoice number format on update
+CREATE TRIGGER validate_invoice_number_update BEFORE UPDATE ON invoices
+WHEN NEW.invoice_number != OLD.invoice_number
+BEGIN
+    SELECT CASE
+        WHEN NEW.invoice_number NOT LIKE 'INV-____-____' OR LENGTH(NEW.invoice_number) != 13
+        THEN RAISE(ABORT, 'Invoice number must be in format INV-YYYY-NNNN')
+    END;
+END;
+
+-- Update invoice counter timestamp
+CREATE TRIGGER update_invoice_counter_timestamp AFTER UPDATE ON invoice_counter BEGIN
+    UPDATE invoice_counter SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
 -- Equipment indexes for mobile performance optimization
 CREATE INDEX idx_equipment_type ON equipment(equipment_type);
 CREATE INDEX idx_equipment_brand ON equipment(brand);
@@ -313,6 +372,9 @@ END;
 CREATE TRIGGER update_equipment_timestamp AFTER UPDATE ON equipment BEGIN
     UPDATE equipment SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
+
+-- Insert starting invoice counter for 2025
+INSERT INTO invoice_counter (year, last_number) VALUES (2025, 0);
 
 -- Insert default equipment types
 INSERT INTO equipment_types (type_name, requires_hours, service_interval_hours) VALUES
