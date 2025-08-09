@@ -231,10 +231,10 @@ function EquipmentList() {
                 ⚠️ This action cannot be undone.
               </p>
             </div>
-            <div className="flex gap-4">
+            <div className="flex gap-4 justify-center">
               <button
                 onClick={handleDelete}
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+                style={{backgroundColor: '#ef4444', color: 'white', padding: '8px 16px', borderRadius: '4px', border: 'none'}}
               >
                 Delete Equipment
               </button>
@@ -243,7 +243,7 @@ function EquipmentList() {
                   setShowDeleteConfirm(false);
                   setEquipmentToDelete(null);
                 }}
-                className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-3 px-4 rounded-lg transition-colors"
+                style={{backgroundColor: '#d1d5db', color: 'black', padding: '8px 16px', borderRadius: '4px', border: 'none'}}
               >
                 Cancel
               </button>
@@ -882,16 +882,16 @@ function EquipmentDetail() {
             <p className="text-gray-600 mb-6">
               Are you sure you want to delete this equipment? This action cannot be undone.
             </p>
-            <div className="flex gap-4">
+            <div className="flex gap-4 justify-center">
               <button
                 onClick={handleDelete}
-                className="btn btn-danger"
+                style={{backgroundColor: '#ef4444', color: 'white', padding: '8px 16px', borderRadius: '4px', border: 'none'}}
               >
                 Delete
               </button>
               <button
                 onClick={() => setShowDeleteConfirm(false)}
-                className="btn btn-outline"
+                style={{backgroundColor: '#d1d5db', color: 'black', padding: '8px 16px', borderRadius: '4px', border: 'none'}}
               >
                 Cancel
               </button>

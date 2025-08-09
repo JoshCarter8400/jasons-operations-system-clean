@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useData } from '../contexts/DataContext';
-import SearchableClientDropdown from './SearchableClientDropdown';
 import { createEmailNotification } from '../services/emailService';
 import {
   getAppointmentsByDate,
@@ -8,6 +7,8 @@ import {
   rescheduleAppointment,
   initializeAppointmentsTable,
   createAppointmentsFromForm,
+  deleteAppointment,
+  deleteAllFutureAppointments,
 } from '../utils/databaseHelpers';
 
 function DailySchedule() {
@@ -19,7 +20,11 @@ function DailySchedule() {
   );
   const [viewMode, setViewMode] = useState('scheduled');
   const [showScheduleForm, setShowScheduleForm] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [appointmentToDelete, setAppointmentToDelete] = useState(null);
   const [appointments, setAppointments] = useState([]);
+  const [weekAppointments, setWeekAppointments] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [scheduleForm, setScheduleForm] = useState({
     appointmentId: null,
     client: null,
@@ -38,8 +43,24 @@ function DailySchedule() {
   }, []);
 
   useEffect(() => {
-    loadAppointmentsForDate(selectedDate);
-  }, [selectedDate]);
+    if (viewMode === 'all') {
+      loadWeekAppointments();
+    } else {
+      loadAppointmentsForDate(selectedDate);
+    }
+  }, [selectedDate, viewMode]);
+
+  // Load week appointments
+  const loadWeekAppointments = async () => {
+    try {
+      const weekData = await getWeekAppointments(selectedDate);
+      setWeekAppointments(weekData);
+      console.log(`📅 Loaded week appointments starting from ${selectedDate}`);
+    } catch (error) {
+      console.error('❌ Failed to load week appointments:', error);
+      setWeekAppointments([]);
+    }
+  };
 
   // Initialize the appointment system
   const initializeSystem = async () => {
@@ -71,31 +92,31 @@ function DailySchedule() {
     }
   };
 
-  // Get upcoming appointments (next 7 days)
-  const getUpcomingAppointments = async () => {
-    const today = new Date();
-    const upcomingAppointments = [];
+  // Get week appointments starting from selected date
+  const getWeekAppointments = async (startDate) => {
+    const weekAppointments = [];
 
     for (let i = 0; i < 7; i++) {
-      const date = new Date(today);
-      date.setDate(today.getDate() + i);
+      const date = new Date(startDate + 'T12:00:00');
+      date.setDate(date.getDate() + i);
       const dateStr = date.toISOString().split('T')[0];
 
       try {
         const dayAppointments = await getAppointmentsByDate(dateStr);
-        upcomingAppointments.push(
-          ...dayAppointments.map((apt) => ({ ...apt, date: dateStr }))
-        );
+        weekAppointments.push({
+          date: dateStr,
+          appointments: dayAppointments.filter(apt => apt.status === 'scheduled')
+        });
       } catch (error) {
         console.error(`Failed to load appointments for ${dateStr}:`, error);
+        weekAppointments.push({
+          date: dateStr,
+          appointments: []
+        });
       }
     }
 
-    return upcomingAppointments.sort(
-      (a, b) =>
-        new Date(a.appointment_date + 'T' + a.appointment_time) -
-        new Date(b.appointment_date + 'T' + b.appointment_time)
-    );
+    return weekAppointments;
   };
 
   // Group appointments by area
@@ -113,6 +134,10 @@ function DailySchedule() {
   const scheduledAppointments = appointments.filter(
     (apt) => apt.status === 'scheduled'
   );
+  const completedAppointments = appointments.filter(
+    (apt) => apt.status === 'completed'
+  );
+  const allVisibleAppointments = [...scheduledAppointments, ...completedAppointments];
   const appointmentsByArea = groupAppointmentsByArea(scheduledAppointments);
 
   // Calculate estimated work time for scheduled appointments
@@ -150,6 +175,7 @@ function DailySchedule() {
   // Handle form submission for scheduling or rescheduling
   const handleScheduleService = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true);
 
     console.log(
       '🚀 Starting handleScheduleService with form data:',
@@ -163,6 +189,7 @@ function DailySchedule() {
         'Please select a client, date, and time',
         false
       );
+      setIsSubmitting(false);
       return;
     }
 
@@ -232,10 +259,11 @@ function DailySchedule() {
       }
       await loadAppointmentsForDate(scheduledDate);
       setShowScheduleForm(false);
+      // Clear form completely for new appointments
       setScheduleForm({
         appointmentId: null,
         client: null,
-        date: scheduledDate,
+        date: selectedDate, // Use current selected date instead of scheduled date
         time: '09:00',
         duration: '1.5',
         serviceType: '',
@@ -252,6 +280,8 @@ function DailySchedule() {
         `Failed to save appointment: ${error.message}`,
         false
       );
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -284,8 +314,8 @@ function DailySchedule() {
       const appointment = appointments.find((apt) => apt.id === appointmentId);
       createEmailNotification(
         'success',
-        'Service Completed!',
-        `${appointment?.client.name} marked as completed`,
+        '✅ Service Completed!',
+        `${appointment?.client.name} service has been marked as completed`,
         true
       );
     } catch (error) {
@@ -299,25 +329,68 @@ function DailySchedule() {
     }
   };
 
-  // Skip/cancel an appointment
-  const handleSkipAppointment = async (appointmentId) => {
-    try {
-      await updateAppointmentStatus(appointmentId, 'cancelled');
-      await loadAppointmentsForDate(selectedDate);
 
-      const appointment = appointments.find((apt) => apt.id === appointmentId);
+  // Show delete confirmation modal
+  const handleShowDeleteModal = (appointment) => {
+    setAppointmentToDelete(appointment);
+    setShowDeleteModal(true);
+  };
+
+  // Delete single appointment
+  const handleDeleteSingleAppointment = async () => {
+    if (!appointmentToDelete) return;
+    
+    try {
+      await deleteAppointment(appointmentToDelete.id);
+      await loadAppointmentsForDate(selectedDate);
+      
       createEmailNotification(
         'success',
-        'Appointment Cancelled',
-        `${appointment?.client.name} appointment cancelled`,
+        'Appointment Deleted',
+        `${appointmentToDelete.client.name} appointment deleted`,
         true
       );
+      
+      setShowDeleteModal(false);
+      setAppointmentToDelete(null);
     } catch (error) {
-      console.error('Failed to cancel appointment:', error);
+      console.error('Failed to delete appointment:', error);
       createEmailNotification(
         'error',
         'Error',
-        'Failed to cancel appointment',
+        `Failed to delete appointment: ${error.message}`,
+        false
+      );
+    }
+  };
+
+  // Delete all future appointments for client
+  const handleDeleteAllFutureAppointments = async () => {
+    if (!appointmentToDelete) return;
+    
+    try {
+      const result = await deleteAllFutureAppointments(
+        appointmentToDelete.client_id,
+        appointmentToDelete.appointment_date
+      );
+      
+      await loadAppointmentsForDate(selectedDate);
+      
+      createEmailNotification(
+        'success',
+        'Future Appointments Deleted',
+        `Deleted ${result.deletedCount} future appointments for ${appointmentToDelete.client.name}`,
+        true
+      );
+      
+      setShowDeleteModal(false);
+      setAppointmentToDelete(null);
+    } catch (error) {
+      console.error('Failed to delete future appointments:', error);
+      createEmailNotification(
+        'error',
+        'Error',
+        `Failed to delete future appointments: ${error.message}`,
         false
       );
     }
@@ -383,21 +456,41 @@ function DailySchedule() {
         <div className="card-content">
           {/* Schedule Service Form Modal */}
           {showScheduleForm && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-6 w-full max-w-lg mx-4">
-                <h3 className="text-lg font-semibold mb-4">
-                  {scheduleForm.appointmentId
-                    ? 'Reschedule Service'
-                    : 'Schedule New Service'}
-                </h3>
+            <div className="fixed inset-0 bg-black bg-opacity-50 modal-backdrop flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 w-full max-w-lg mx-4 shadow-xl">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">
+                    {scheduleForm.appointmentId
+                      ? 'Reschedule Service'
+                      : 'Schedule New Service'}
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setShowScheduleForm(false)}
+                    className="btn btn-outline px-4 py-2"
+                  >
+                    ← Back to Schedule
+                  </button>
+                </div>
                 <form onSubmit={handleScheduleService}>
                   <div className="mb-4">
-                    <SearchableClientDropdown
-                      selectedClient={scheduleForm.client}
-                      onClientChange={handleClientChange}
-                      clients={clients}
-                      placeholder="Type to search and select client..."
-                    />
+                    <label className="block text-sm font-medium mb-2">Client *</label>
+                    <select 
+                      value={scheduleForm.client?.id || ''} 
+                      onChange={(e) => {
+                        const selectedClient = clients.find(c => c.id === parseInt(e.target.value));
+                        handleClientChange(selectedClient);
+                      }}
+                      className="w-full p-3 border border-gray-300 rounded-md"
+                      required
+                    >
+                      <option value="">Select a client...</option>
+                      {clients.map(client => (
+                        <option key={client.id} value={client.id}>
+                          {client.name} - {client.area} - {client.phone}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 mb-4">
@@ -570,21 +663,69 @@ function DailySchedule() {
                       placeholder="Special instructions, access notes, etc..."
                     />
                   </div>
-                  <div className="flex gap-4">
-                    <button type="submit" className="btn btn-primary flex-1">
-                      {scheduleForm.appointmentId
-                        ? 'Reschedule Service'
-                        : 'Schedule Service'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowScheduleForm(false)}
-                      className="btn btn-outline flex-1"
+                  <div className="flex justify-end">
+                    <button 
+                      type="submit" 
+                      className={`btn btn-primary px-6 ${isSubmitting ? 'btn-loading' : ''}`}
+                      disabled={isSubmitting}
                     >
-                      Cancel
+                      {isSubmitting ? 'Saving...' : (scheduleForm.appointmentId
+                        ? 'Confirm Reschedule'
+                        : 'Confirm Appointment')}
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+          )}
+
+          {/* Delete Confirmation Modal */}
+          {showDeleteModal && appointmentToDelete && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center" style={{zIndex: 9999}}>
+              <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4" style={{zIndex: 10000}}>
+                <h3 className="text-lg font-semibold mb-4 text-red-600" style={{color: 'red !important'}}>
+                  Delete Appointment?
+                </h3>
+                <div className="mb-6">
+                  <p className="text-gray-700 mb-2">
+                    <strong>Client:</strong> {appointmentToDelete.client.name}
+                  </p>
+                  <p className="text-gray-700 mb-2">
+                    <strong>Date:</strong> {formatDate(appointmentToDelete.appointment_date)}
+                  </p>
+                  <p className="text-gray-700 mb-4">
+                    <strong>Time:</strong> {appointmentToDelete.appointment_time}
+                  </p>
+                  <p className="text-gray-600 text-sm mb-6">
+                    Choose your deletion option:
+                  </p>
+                </div>
+                <div className="flex flex-col items-center gap-3">
+                  <button
+                    onClick={handleDeleteSingleAppointment}
+                    className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+                    style={{backgroundColor: '#ef4444', color: 'white', padding: '8px 16px', borderRadius: '4px', border: 'none'}}
+                  >
+                    Delete This Appointment Only
+                  </button>
+                  <button
+                    onClick={handleDeleteAllFutureAppointments}
+                    className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+                    style={{backgroundColor: '#ef4444', color: 'white', padding: '8px 16px', borderRadius: '4px', border: 'none'}}
+                  >
+                    Delete All Future Appointments for {appointmentToDelete.client.name}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowDeleteModal(false);
+                      setAppointmentToDelete(null);
+                    }}
+                    className="bg-gray-300 text-black px-4 py-2 rounded hover:bg-gray-400"
+                    style={{backgroundColor: '#d1d5db', color: 'black', padding: '8px 16px', borderRadius: '4px', border: 'none'}}
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -635,11 +776,10 @@ function DailySchedule() {
             </div>
             <div className="text-right">
               <p className="text-sm text-gray-600">
-                {scheduledAppointments.length} service
-                {scheduledAppointments.length !== 1 ? 's' : ''} scheduled
+                {scheduledAppointments.length} scheduled • {completedAppointments.length} completed
               </p>
               <p className="text-sm text-gray-600">
-                Est. {totalEstimatedTime.toFixed(1)} hours total
+                Est. {totalEstimatedTime.toFixed(1)} hours remaining
               </p>
             </div>
           </div>
@@ -648,10 +788,10 @@ function DailySchedule() {
           {viewMode === 'scheduled' && (
             <div>
               <h3 className="font-semibold text-lg mb-4">
-                Scheduled for {formatDate(selectedDate)}
+                Services for {formatDate(selectedDate)}
               </h3>
 
-              {scheduledAppointments.length === 0 ? (
+              {allVisibleAppointments.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <p className="mb-4">No services scheduled for this date</p>
                   <button
@@ -663,8 +803,9 @@ function DailySchedule() {
                 </div>
               ) : (
                 <div className="grid gap-4">
+                  {/* Scheduled Appointments */}
                   {scheduledAppointments.map((appointment) => (
-                    <div key={appointment.id} className="card">
+                    <div key={appointment.id} className="card card-hover">
                       <div className="card-content">
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
@@ -712,12 +853,11 @@ function DailySchedule() {
                               Reschedule
                             </button>
                             <button
-                              onClick={() =>
-                                handleSkipAppointment(appointment.id)
-                              }
-                              className="btn btn-outline btn-sm text-red-600"
+                              onClick={() => handleShowDeleteModal(appointment)}
+                              className="btn btn-outline btn-sm text-red-600 border-red-600 hover:bg-red-600 hover:text-white"
+                              style={{color: 'red', borderColor: 'red'}}
                             >
-                              Cancel
+                              Delete
                             </button>
                             <button
                               onClick={() =>
@@ -725,10 +865,138 @@ function DailySchedule() {
                               }
                               className="btn btn-primary btn-sm"
                             >
-                              Complete
+                              ✓ Complete
                             </button>
                           </div>
                         </div>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {/* Completed Appointments */}
+                  {completedAppointments.length > 0 && (
+                    <div className="mt-6">
+                      <h4 className="font-medium text-gray-600 mb-3 flex items-center gap-2">
+                        <span className="text-green-600">✓</span> Completed Services
+                      </h4>
+                      {completedAppointments.map((appointment) => (
+                        <div key={appointment.id} className="card card-hover opacity-75 border-l-4 border-l-green-500">
+                          <div className="card-content bg-green-50">
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-4 mb-2">
+                                  <h4 className="font-semibold text-lg text-green-800 line-through decoration-2">
+                                    {appointment.client.name}
+                                  </h4>
+                                  <span className="px-2 py-1 bg-green-200 text-green-900 rounded-full text-xs font-medium">
+                                    ✓ COMPLETED
+                                  </span>
+                                  <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                                    {appointment.client.area}
+                                  </span>
+                                  <span className="px-2 py-1 bg-gray-200 text-gray-700 rounded-full text-xs">
+                                    {appointment.appointment_time}
+                                  </span>
+                                </div>
+                                <p className="text-gray-500 mb-1">
+                                  {appointment.client.address}
+                                </p>
+                                <div className="flex gap-6 text-sm text-gray-500 mb-2">
+                                  <span>
+                                    <strong>Service:</strong>{' '}
+                                    {appointment.service_type}
+                                  </span>
+                                  <span>
+                                    <strong>Phone:</strong>{' '}
+                                    {appointment.client.phone}
+                                  </span>
+                                  <span>
+                                    <strong>Duration:</strong>{' '}
+                                    {appointment.duration_hours}h
+                                  </span>
+                                </div>
+                                {appointment.notes && (
+                                  <p className="text-sm text-gray-600 bg-gray-100 p-2 rounded">
+                                    <strong>Notes:</strong> {appointment.notes}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {viewMode === 'all' && (
+            <div>
+              <h3 className="font-semibold text-lg mb-4">
+                Week View - {formatDate(selectedDate)} to {formatDate(weekAppointments.length > 0 ? weekAppointments[weekAppointments.length - 1]?.date : selectedDate)}
+              </h3>
+
+              {weekAppointments.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <p>Loading week appointments...</p>
+                </div>
+              ) : (
+                <div className="grid gap-4">
+                  {weekAppointments.map((dayData) => (
+                    <div key={dayData.date} className="card">
+                      <div className="card-header">
+                        <div className="flex justify-between items-center">
+                          <h4 className="font-semibold text-lg">
+                            {formatDate(dayData.date)}
+                            {isToday(dayData.date) && (
+                              <span className="text-green-600 font-medium text-sm ml-2">(Today)</span>
+                            )}
+                            {isTomorrow(dayData.date) && (
+                              <span className="text-blue-600 font-medium text-sm ml-2">(Tomorrow)</span>
+                            )}
+                          </h4>
+                          <span className="text-sm text-gray-600">
+                            {dayData.appointments.length} appointment{dayData.appointments.length !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="card-content">
+                        {dayData.appointments.length === 0 ? (
+                          <p className="text-gray-500 text-center py-4">No appointments scheduled</p>
+                        ) : (
+                          <div className="grid gap-3">
+                            {dayData.appointments.map((appointment) => (
+                              <div
+                                key={appointment.id}
+                                className="flex justify-between items-center p-3 bg-gray-50 rounded hover:bg-gray-100 cursor-pointer"
+                                onClick={() => {
+                                  setSelectedDate(dayData.date);
+                                  setViewMode('scheduled');
+                                }}
+                              >
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-3 mb-1">
+                                    <p className="font-medium">{appointment.client.name}</p>
+                                    <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                                      {appointment.client.area}
+                                    </span>
+                                    <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
+                                      {appointment.appointment_time}
+                                    </span>
+                                  </div>
+                                  <p className="text-sm text-gray-600">{appointment.client.address}</p>
+                                  <p className="text-sm text-gray-600">{appointment.service_type}</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-sm text-gray-600">{appointment.client.phone}</p>
+                                  <p className="text-sm text-gray-600">{appointment.duration_hours}h</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}

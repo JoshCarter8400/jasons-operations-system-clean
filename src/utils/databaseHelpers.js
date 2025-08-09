@@ -711,6 +711,63 @@ export async function createAppointmentsFromForm(formData) {
 }
 
 /**
+ * Delete a single appointment from the database
+ */
+export async function deleteAppointment(appointmentId) {
+  console.log(`🗑️ Deleting appointment ${appointmentId}...`);
+  
+  try {
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    const db = createLibSQLClient(config);
+    
+    const result = await db.execute({
+      sql: 'DELETE FROM appointments WHERE id = ?',
+      args: [appointmentId]
+    });
+    
+    if (result.rowsAffected === 0) {
+      throw new Error(`Appointment ${appointmentId} not found`);
+    }
+    
+    console.log(`✅ Successfully deleted appointment ${appointmentId}`);
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Error deleting appointment:', error);
+    throw error;
+  }
+}
+
+/**
+ * Delete all future appointments for a client from a specified date onwards
+ */
+export async function deleteAllFutureAppointments(clientId, fromDate) {
+  console.log(`🗑️ Deleting all future appointments for client ${clientId} from ${fromDate}...`);
+  
+  try {
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    const db = createLibSQLClient(config);
+    
+    // Delete all appointments for this client on or after the specified date
+    const result = await db.execute({
+      sql: 'DELETE FROM appointments WHERE client_id = ? AND appointment_date >= ?',
+      args: [clientId, fromDate]
+    });
+    
+    console.log(`✅ Successfully deleted ${result.rowsAffected} future appointments for client ${clientId}`);
+    return { success: true, deletedCount: result.rowsAffected };
+  } catch (error) {
+    console.error('❌ Error deleting future appointments:', error);
+    throw error;
+  }
+}
+
+/**
  * Test function to verify database connection and client loading
  */
 export async function testDatabaseConnection() {
