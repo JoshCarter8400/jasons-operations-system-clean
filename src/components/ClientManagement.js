@@ -7,8 +7,9 @@ import { generateRecurringAppointmentsForClient } from '../utils/databaseHelpers
 
 
 function ClientList() {
-  const { searchClients, clientsLoading, refreshClients } = useData();
+  const { searchClients, clientsLoading, refreshClients, markServiceComplete } = useData();
   const [searchTerm, setSearchTerm] = useState('');
+  const [completingService, setCompletingService] = useState({});
   const navigate = useNavigate();
 
   const handleDelete = async (client) => {
@@ -25,6 +26,28 @@ function ClientList() {
         console.error('Failed to delete client:', error);
         alert('Failed to delete client. Please try again.');
       }
+    }
+  };
+
+  const handleMarkServiceComplete = async (client) => {
+    try {
+      setCompletingService(prev => ({ ...prev, [client.id]: true }));
+      
+      // Use client's default service info
+      const serviceDetails = {
+        description: `${client.serviceType} - ${formatDate(new Date().toISOString().split('T')[0])}`,
+        quantity: 1,
+        rate: parseFloat(client.price?.replace(/[^0-9.]/g, '') || '0')
+      };
+
+      await markServiceComplete(client.id, serviceDetails);
+      
+      // Success! Service added to collecting invoice
+      setCompletingService(prev => ({ ...prev, [client.id]: false }));
+    } catch (error) {
+      console.error('Failed to mark service complete:', error);
+      alert('Failed to add service to invoice. Please try again.');
+      setCompletingService(prev => ({ ...prev, [client.id]: false }));
     }
   };
 
@@ -86,6 +109,15 @@ function ClientList() {
                       }`}>
                         {client.status}
                       </span>
+                      <div className="flex gap-2 mb-2">
+                        <button
+                          onClick={() => handleMarkServiceComplete(client)}
+                          disabled={completingService[client.id]}
+                          className="btn btn-success btn-sm w-full"
+                        >
+                          {completingService[client.id] ? '⏳ Adding...' : '✅ Service Complete'}
+                        </button>
+                      </div>
                       <div className="flex gap-2">
                         <button
                           onClick={() => navigate(`/clients/${client.id}`)}

@@ -145,7 +145,64 @@ const initializeSchema = async () => {
     `CREATE INDEX IF NOT EXISTS idx_clients_area ON clients(area)`,
     `CREATE INDEX IF NOT EXISTS idx_clients_service_type ON clients(service_type)`,
     `CREATE INDEX IF NOT EXISTS idx_clients_status ON clients(status)`,
-    `CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name)`
+    `CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name)`,
+    
+    // Invoices table - Jason's invoice management system
+    `CREATE TABLE IF NOT EXISTS invoices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_number TEXT UNIQUE,
+      client_id INTEGER NOT NULL,
+      client_name TEXT NOT NULL,
+      date TEXT NOT NULL,
+      due_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'collecting',
+      subtotal REAL NOT NULL DEFAULT 0.0,
+      tax REAL NOT NULL DEFAULT 0.0,
+      total REAL NOT NULL DEFAULT 0.0,
+      notes TEXT DEFAULT '',
+      payment_method TEXT,
+      sent_date TEXT,
+      paid_date TEXT,
+      receipt_sent_date TEXT,
+      receipt_delivery_method TEXT DEFAULT 'email',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+    
+    // Invoice line items table
+    `CREATE TABLE IF NOT EXISTS invoice_line_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_id INTEGER NOT NULL,
+      description TEXT NOT NULL,
+      quantity REAL NOT NULL DEFAULT 1.0,
+      rate REAL NOT NULL,
+      amount REAL NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE CASCADE
+    )`,
+    
+    // Invoice indexes for performance
+    `CREATE INDEX IF NOT EXISTS idx_invoices_client_id ON invoices(client_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)`,
+    `CREATE INDEX IF NOT EXISTS idx_invoices_date ON invoices(date)`,
+    `CREATE INDEX IF NOT EXISTS idx_invoices_number ON invoices(invoice_number)`,
+    `CREATE INDEX IF NOT EXISTS idx_line_items_invoice_id ON invoice_line_items(invoice_id)`,
+    
+    // Trigger for auto-generating invoice numbers
+    `CREATE TRIGGER IF NOT EXISTS invoice_number_trigger 
+     AFTER INSERT ON invoices
+     WHEN NEW.invoice_number IS NULL
+     BEGIN
+       UPDATE invoices 
+       SET invoice_number = 'INV-' || strftime('%Y', 'now') || '-' || 
+           CASE 
+             WHEN LENGTH(CAST(NEW.id AS TEXT)) = 1 THEN '000' || NEW.id
+             WHEN LENGTH(CAST(NEW.id AS TEXT)) = 2 THEN '00' || NEW.id  
+             WHEN LENGTH(CAST(NEW.id AS TEXT)) = 3 THEN '0' || NEW.id
+             ELSE CAST(NEW.id AS TEXT)
+           END
+       WHERE id = NEW.id;
+     END`
   ];
   
   for (const query of schemaQueries) {

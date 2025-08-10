@@ -1,240 +1,334 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Routes, Route, Link, useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { useData } from '../contexts/DataContext';
 import { jasonBusinessData } from '../data/jasonData';
-import SearchableClientDropdown from './SearchableClientDropdown';
+import CollectingInvoiceEditor from './CollectingInvoiceEditor';
+import { InvoiceStatusBadge } from './InvoiceStatusBadge';
 
 
 function InvoiceList() {
   const {
-    invoices,
-    paymentMethods,
-    getInvoiceById,
-    getClientById,
-    markInvoicePaid,
-    sendInvoice
+    getAllCollectingInvoices,
+    getAllDatabaseInvoices,
+    sendCollectingInvoiceToClient,
+    markCollectingInvoicePaid,
+    paymentMethods
   } = useData();
   
+  const [collectingInvoices, setCollectingInvoices] = useState([]);
+  const [databaseInvoices, setDatabaseInvoices] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [dateFilter, setDateFilter] = useState('all'); // 'all', 'month', 'week', 'custom'
-  const [customDateRange, setCustomDateRange] = useState({
-    startDate: '',
-    endDate: ''
-  });
+  const [activeTab, setActiveTab] = useState('collecting'); // 'collecting', 'sent', 'paid'
+  const [sending, setSending] = useState({});
+  const [markingPaid, setMarkingPaid] = useState({});
+  
   const navigate = useNavigate();
 
-  // Date filtering functions
-  const getDateRange = (filter) => {
-    const today = new Date();
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - today.getDay());
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 6);
-    
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-    
-    switch (filter) {
-      case 'week':
-        return {
-          start: startOfWeek.toISOString().split('T')[0],
-          end: endOfWeek.toISOString().split('T')[0]
-        };
-      case 'month':
-        return {
-          start: startOfMonth.toISOString().split('T')[0],
-          end: endOfMonth.toISOString().split('T')[0]
-        };
-      case 'custom':
-        return {
-          start: customDateRange.startDate,
-          end: customDateRange.endDate
-        };
-      default:
-        return null;
+  useEffect(() => {
+    loadAllInvoices();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadAllInvoices = async () => {
+    try {
+      setLoading(true);
+      console.log('🔍 Loading all invoices...');
+      
+      const [collecting, database] = await Promise.all([
+        getAllCollectingInvoices(),
+        getAllDatabaseInvoices()
+      ]);
+      
+      console.log('📋 Collecting invoices:', collecting.length);
+      console.log('📋 Database invoices:', database.length);
+      
+      setCollectingInvoices(collecting);
+      setDatabaseInvoices(database);
+    } catch (error) {
+      console.error('Failed to load invoices:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const filteredInvoices = invoices.filter(invoice => {
-    // Text search filter
-    const matchesSearch = invoice.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      invoice.id.toString().includes(searchTerm);
-    
-    // Date filter
-    if (dateFilter === 'all') {
-      return matchesSearch;
-    }
-    
-    const dateRange = getDateRange(dateFilter);
-    if (!dateRange || !dateRange.start || !dateRange.end) {
-      return matchesSearch;
-    }
-    
-    const invoiceDate = invoice.date;
-    const matchesDate = invoiceDate >= dateRange.start && invoiceDate <= dateRange.end;
-    
-    return matchesSearch && matchesDate;
-  });
 
-  const handleSendInvoice = async (invoiceId) => {
-    const invoice = getInvoiceById(invoiceId);
-    const client = getClientById(invoice.clientId);
+  const handleSendCollectingInvoice = async (invoice) => {
+    const confirmed = window.confirm(
+      `Send invoice to ${invoice.client_name}? This will finalize the invoice.`
+    );
     
-    // Default to email option
-    const method = client && client.email ? 'email' : 'manual';
-    await sendInvoice(invoiceId, method);
-  };
+    if (!confirmed) return;
 
-  const handleMarkPaid = async (invoiceId) => {
-    const invoice = getInvoiceById(invoiceId);
-    const client = getClientById(invoice.clientId);
-    
-    // Use existing payment method from client, or default
-    const paymentMethod = client?.paymentMethod || paymentMethods[0];
-    
-    await markInvoicePaid(invoiceId, paymentMethod);
-  };
-
-  const handleExportToGoogleSheets = () => {
-    alert('Google Sheets export functionality will be implemented. This would export all invoice data for your CPA.');
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'Paid': return 'bg-green-100 text-green-800';
-      case 'Pending': return 'bg-yellow-100 text-yellow-800';
-      case 'Overdue': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
+    try {
+      setSending(prev => ({ ...prev, [invoice.id]: true }));
+      await sendCollectingInvoiceToClient(invoice.id);
+      
+      // Immediately refresh all invoice data
+      const [collecting, database] = await Promise.all([
+        getAllCollectingInvoices(),
+        getAllDatabaseInvoices()
+      ]);
+      
+      setCollectingInvoices(collecting);
+      setDatabaseInvoices(database);
+    } catch (error) {
+      console.error('Failed to send invoice:', error);
+      alert('Failed to send invoice. Please try again.');
+    } finally {
+      setSending(prev => ({ ...prev, [invoice.id]: false }));
     }
   };
+
+  const handleMarkPaid = async (invoiceId, invoiceNumber) => {
+    const paymentMethod = paymentMethods[0] || 'Cash';
+    const confirmed = window.confirm(
+      `Mark Invoice #${invoiceNumber} as paid? Payment method: ${paymentMethod}`
+    );
+    
+    if (!confirmed) return;
+
+    try {
+      setMarkingPaid(prev => ({ ...prev, [invoiceId]: true }));
+      
+      if (activeTab === 'collecting') {
+        await markCollectingInvoicePaid(invoiceId, paymentMethod);
+      } else {
+        // For database invoices (sent/paid), use the database helper directly
+        const { updateInvoiceStatus } = await import('../utils/databaseHelpers');
+        const paidDate = new Date().toISOString().split('T')[0];
+        await updateInvoiceStatus(invoiceId, 'paid', { 
+          paid_date: paidDate,
+          payment_method: paymentMethod 
+        });
+      }
+      
+      // Refresh all data
+      await loadAllInvoices();
+    } catch (error) {
+      console.error('Failed to mark invoice as paid:', error);
+      alert('Failed to mark invoice as paid. Please try again.');
+    } finally {
+      setMarkingPaid(prev => ({ ...prev, [invoiceId]: false }));
+    }
+  };
+
+
+  const getDisplayInvoices = () => {
+    let displayInvoices = [];
+    
+    if (activeTab === 'collecting') {
+      displayInvoices = collectingInvoices;
+    } else {
+      // Use database invoices for sent/paid tabs
+      displayInvoices = databaseInvoices.filter(inv => {
+        if (activeTab === 'sent') return inv.status === 'Sent';
+        if (activeTab === 'paid') return inv.status === 'Paid';
+        return true;
+      });
+    }
+
+    if (searchTerm) {
+      displayInvoices = displayInvoices.filter(invoice =>
+        (invoice.client_name || invoice.clientName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (invoice.invoice_number || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (invoice.id && invoice.id.toString().includes(searchTerm))
+      );
+    }
+
+    console.log(`📊 Display invoices for ${activeTab} tab:`, displayInvoices.length);
+    return displayInvoices;
+  };
+
+  const displayInvoices = getDisplayInvoices();
+
+  if (loading) {
+    return (
+      <div className="card">
+        <div className="card-content">
+          <div className="flex justify-center items-center py-12">
+            <div className="text-gray-600">Loading invoices...</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
       <div className="card">
         <div className="card-header">
           <div className="flex justify-between items-center flex-wrap gap-4">
-            <h1 className="card-title">Invoices</h1>
-            <div className="flex gap-2">
-              <Link to="/invoicing/create" className="btn btn-primary">
-                + Create Invoice
+            <h1 className="card-title">Jason's Invoice Management</h1>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Link to="/invoicing/create" className="btn btn-outline min-h-[44px] py-3 px-4 font-medium">
+                + Manual Invoice
               </Link>
-              <button onClick={handleExportToGoogleSheets} className="btn btn-outline">
-                📊 Export to Google Sheets
+              <button 
+                onClick={loadAllInvoices}
+                className="btn btn-secondary min-h-[44px] py-3 px-4 font-medium"
+              >
+                🔄 Refresh
               </button>
             </div>
           </div>
         </div>
+        
         <div className="card-content">
-          <div className="mb-6 space-y-4">
+          {/* Tab Navigation */}
+          <div className="mb-6">
+            <div className="flex border-b border-gray-200">
+              <button
+                onClick={() => setActiveTab('collecting')}
+                className={`px-6 py-4 font-medium min-h-[50px] flex-1 sm:flex-none ${
+                  activeTab === 'collecting'
+                    ? 'text-blue-600 border-b-2 border-blue-600'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                📋 Collecting ({collectingInvoices.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('sent')}
+                className={`px-6 py-4 font-medium min-h-[50px] flex-1 sm:flex-none ${
+                  activeTab === 'sent'
+                    ? 'text-blue-600 border-b-2 border-blue-600'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                📧 Sent ({databaseInvoices.filter(i => i.status === 'Sent').length})
+              </button>
+              <button
+                onClick={() => setActiveTab('paid')}
+                className={`px-6 py-4 font-medium min-h-[50px] flex-1 sm:flex-none ${
+                  activeTab === 'paid'
+                    ? 'text-blue-600 border-b-2 border-blue-600'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                ✅ Paid ({databaseInvoices.filter(i => i.status === 'Paid').length})
+              </button>
+            </div>
+          </div>
+
+          {/* Search */}
+          <div className="mb-6">
             <input
               type="text"
               placeholder="Search invoices by client name or invoice number..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-md"
+              className="w-full p-4 text-lg border border-gray-300 rounded-md min-h-[48px]"
             />
-            
-            <div className="flex flex-wrap gap-4 items-end">
-              <div>
-                <label className="block text-sm font-medium mb-2">Filter by Date</label>
-                <select
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                  className="p-3 border border-gray-300 rounded-md"
-                >
-                  <option value="all">All Time</option>
-                  <option value="week">This Week</option>
-                  <option value="month">This Month</option>
-                  <option value="custom">Custom Range</option>
-                </select>
-              </div>
-              
-              {dateFilter === 'custom' && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Start Date</label>
-                    <input
-                      type="date"
-                      value={customDateRange.startDate}
-                      onChange={(e) => setCustomDateRange({...customDateRange, startDate: e.target.value})}
-                      className="p-3 border border-gray-300 rounded-md"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">End Date</label>
-                    <input
-                      type="date"
-                      value={customDateRange.endDate}
-                      onChange={(e) => setCustomDateRange({...customDateRange, endDate: e.target.value})}
-                      className="p-3 border border-gray-300 rounded-md"
-                    />
-                  </div>
-                </>
-              )}
-              
-              <div className="text-sm text-gray-600">
-                Showing {filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? 's' : ''}
-              </div>
-            </div>
           </div>
-          
-          <div className="grid gap-4">
-            {filteredInvoices.map((invoice) => (
-              <div key={invoice.id} className="card">
-                <div className="card-content">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-4 mb-2">
-                        <h3 className="font-semibold text-lg">Invoice #{invoice.id}</h3>
-                        <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(invoice.status)}`}>
-                          {invoice.status}
-                        </span>
-                      </div>
-                      <p className="text-gray-600 mb-1">{invoice.clientName}</p>
-                      <div className="flex gap-6 text-sm text-gray-600">
-                        <span><strong>Date:</strong> {invoice.date}</span>
-                        <span><strong>Due:</strong> {invoice.dueDate}</span>
-                        <span><strong>Total:</strong> ${invoice.total.toFixed(2)}</span>
+
+          {/* Collecting Invoices View */}
+          {activeTab === 'collecting' && (
+            <div>
+              <div className="mb-4 p-4 bg-blue-50 border-l-4 border-blue-400 rounded">
+                <h3 className="font-semibold text-blue-800">Collecting Invoices - Jason's Active Workflow</h3>
+                <p className="text-blue-700 text-sm">
+                  These invoices are accumulating services. Edit them freely, then send when ready.
+                </p>
+              </div>
+              
+              <div className="grid gap-4">
+                {displayInvoices.map((invoice) => (
+                  <div key={invoice.id} className="card border-l-4 border-blue-400">
+                    <div className="card-content">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-4 mb-2">
+                            <h3 className="font-semibold text-lg">{invoice.client_name}</h3>
+                            <InvoiceStatusBadge status="collecting" size="md" />
+                          </div>
+                          <div className="text-sm text-gray-600 space-y-1">
+                            <p><strong>Invoice:</strong> #{invoice.invoice_number || invoice.id}</p>
+                            <p><strong>Services:</strong> {invoice.line_items ? invoice.line_items.length : 0}</p>
+                            <p><strong>Subtotal:</strong> ${(invoice.subtotal || 0).toFixed(2)}</p>
+                            <p><strong>Tax (7.5%):</strong> ${(invoice.tax || 0).toFixed(2)}</p>
+                            <p><strong>Total:</strong> <strong>${(invoice.total || 0).toFixed(2)}</strong></p>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-3">
+                          <button
+                            onClick={() => navigate(`/invoicing/collecting/${invoice.client_id}`)}
+                            className="btn btn-primary min-h-[44px] py-3 px-4 font-medium"
+                          >
+                            📝 Edit Invoice
+                          </button>
+                          <button
+                            onClick={() => handleSendCollectingInvoice(invoice)}
+                            disabled={sending[invoice.id] || !invoice.line_items || invoice.line_items.length === 0}
+                            className="btn btn-success min-h-[44px] py-3 px-4 font-medium"
+                          >
+                            {sending[invoice.id] ? '⏳ Sending...' : '📧 Send Invoice'}
+                          </button>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex flex-col gap-2">
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => navigate(`/invoicing/${invoice.id}`)}
-                          className="btn btn-outline btn-sm"
-                        >
-                          View
-                        </button>
-                        <button
-                          onClick={() => navigate(`/invoicing/${invoice.id}/edit`)}
-                          className="btn btn-primary btn-sm"
-                          disabled={invoice.status === 'Paid'}
-                        >
-                          Edit
-                        </button>
+                  </div>
+                ))}
+                
+                {displayInvoices.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <p>No collecting invoices yet.</p>
+                    <p className="text-sm">Mark services complete from Client Management to start collecting.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Sent/Paid Invoices View */}
+          {(activeTab === 'sent' || activeTab === 'paid') && (
+            <div className="grid gap-4">
+              {displayInvoices.map((invoice) => (
+                <div key={invoice.id} className="card">
+                  <div className="card-content">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-4 mb-2">
+                          <h3 className="font-semibold text-lg">Invoice #{invoice.invoice_number || invoice.id}</h3>
+                          <InvoiceStatusBadge status={invoice.status} size="sm" />
+                        </div>
+                        <p className="text-gray-600 mb-1">{invoice.clientName || invoice.client_name}</p>
+                        <div className="flex gap-6 text-sm text-gray-600">
+                          <span><strong>Date:</strong> {invoice.date}</span>
+                          <span><strong>Due:</strong> {invoice.due_date || invoice.dueDate}</span>
+                          <span><strong>Total:</strong> ${(invoice.total || 0).toFixed(2)}</span>
+                        </div>
                       </div>
-                      <div className="flex gap-2">
-                        <button 
-                          onClick={() => handleSendInvoice(invoice.id)}
-                          className="btn btn-secondary btn-sm"
-                        >
-                          📧 Send
-                        </button>
-                        {(invoice.status === 'Pending' || invoice.status === 'Sent') && (
-                          <button 
-                            onClick={() => handleMarkPaid(invoice.id)}
-                            className="btn btn-outline btn-sm"
+                      <div className="flex flex-col gap-3">
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <button
+                            onClick={() => navigate(`/invoicing/${invoice.id}`)}
+                            className="btn btn-outline min-h-[44px] py-3 px-4 font-medium"
                           >
-                            ✓ Mark Paid
+                            👁️ View
                           </button>
-                        )}
+                          {invoice.status !== 'Paid' && (
+                            <button
+                              onClick={() => handleMarkPaid(invoice.id, invoice.invoice_number || invoice.id)}
+                              disabled={markingPaid[invoice.id]}
+                              className="btn btn-success min-h-[44px] py-3 px-4 font-medium"
+                            >
+                              {markingPaid[invoice.id] ? '⏳ Processing...' : '✓ Mark Paid'}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+              
+              {displayInvoices.length === 0 && (
+                <div className="text-center py-8 text-gray-500">
+                  <p>No {activeTab} invoices found.</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -246,28 +340,30 @@ function AmountInput({ value, onChange, name, placeholder, required = false }) {
 
   const handleChange = (e) => {
     const newValue = e.target.value;
-    setInputValue(newValue);
     
-    // Convert to number, handling empty string as 0
-    const numericValue = newValue === '' ? 0 : parseFloat(newValue) || 0;
-    onChange({
-      target: {
-        name,
-        value: numericValue
-      }
-    });
+    // Only allow numbers and decimal point
+    if (newValue === '' || /^\d*\.?\d*$/.test(newValue)) {
+      setInputValue(newValue);
+      
+      // Convert to number, handling empty string as 0
+      const numericValue = newValue === '' ? 0 : parseFloat(newValue) || 0;
+      onChange({
+        target: {
+          name,
+          value: numericValue
+        }
+      });
+    }
   };
 
-  const handleFocus = () => {
-    // Clear the field if it shows 0
-    if (inputValue === '0' || inputValue === '') {
-      setInputValue('');
-    }
+  const handleFocus = (e) => {
+    // Select all text for easy replacement
+    e.target.select();
   };
 
   return (
     <input
-      type="number"
+      type="text"
       name={name}
       required={required}
       value={inputValue}
@@ -275,8 +371,6 @@ function AmountInput({ value, onChange, name, placeholder, required = false }) {
       onFocus={handleFocus}
       placeholder={placeholder}
       className="w-full p-3 border border-gray-300 rounded-md"
-      step="0.01"
-      min="0"
     />
   );
 }
@@ -355,24 +449,30 @@ function CreateInvoice() {
   const tax = subtotal * taxRate;
   const total = subtotal + tax;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!selectedClient) {
       alert('Please select a client');
       return;
     }
     
-    const newInvoice = addInvoice({
-      clientId: selectedClient.id,
-      clientName: selectedClient.name,
-      ...invoiceData,
-      subtotal,
-      tax,
-      total
-    });
-    
-    console.log('Created invoice:', newInvoice);
-    navigate('/invoicing');
+    try {
+      const newInvoice = await addInvoice({
+        clientId: selectedClient.id,
+        clientName: selectedClient.name,
+        ...invoiceData,
+        subtotal,
+        tax,
+        total
+      });
+      
+      console.log('✅ Created invoice:', newInvoice.invoice_number);
+      alert(`Invoice ${newInvoice.invoice_number} created successfully!`);
+      navigate('/invoicing');
+    } catch (error) {
+      console.error('Failed to create invoice:', error);
+      alert('Failed to create invoice. Please try again.');
+    }
   };
 
   return (
@@ -389,11 +489,25 @@ function CreateInvoice() {
         <div className="card-content">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <SearchableClientDropdown
-                selectedClient={selectedClient}
-                onClientChange={setSelectedClient}
-                clients={clients}
-              />
+              <div>
+                <label className="block text-sm font-medium mb-2">Client *</label>
+                <select 
+                  value={selectedClient?.id || ''} 
+                  onChange={(e) => {
+                    const selectedClientData = clients.find(c => c.id === parseInt(e.target.value));
+                    setSelectedClient(selectedClientData);
+                  }}
+                  className="w-full p-3 border border-gray-300 rounded-md"
+                  required
+                >
+                  <option value="">Select a client...</option>
+                  {clients.map(client => (
+                    <option key={client.id} value={client.id}>
+                      {client.name} - {client.area} - {client.phone}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="block text-sm font-medium mb-2">Invoice Date *</label>
                 <input
@@ -513,7 +627,7 @@ function CreateInvoice() {
                   <span>${subtotal.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Tax ({(taxRate * 100).toFixed(1)}%):</span>
+                  <span>Florida Sales Tax (7.5%):</span>
                   <span>${tax.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between font-bold text-lg border-t pt-2">
@@ -545,15 +659,45 @@ function CreateInvoice() {
 function InvoiceDetail() {
   const {
     paymentMethods,
-    getInvoiceById,
     getClientById,
     markInvoicePaid,
-    sendInvoice
+    sendInvoice,
+    getAllDatabaseInvoices
   } = useData();
   
   const { id } = useParams();
   const navigate = useNavigate();
-  const invoice = getInvoiceById(parseInt(id));
+  const [invoice, setInvoice] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadInvoice = async () => {
+      try {
+        setLoading(true);
+        const databaseInvoices = await getAllDatabaseInvoices();
+        const foundInvoice = databaseInvoices.find(inv => inv.id === parseInt(id));
+        setInvoice(foundInvoice);
+      } catch (error) {
+        console.error('Failed to load invoice:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadInvoice();
+  }, [id, getAllDatabaseInvoices]);
+
+  if (loading) {
+    return (
+      <div className="card">
+        <div className="card-content">
+          <div className="flex justify-center items-center py-12">
+            <div className="text-gray-600">Loading invoice...</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!invoice) {
     return (
@@ -591,7 +735,7 @@ function InvoiceDetail() {
             <button onClick={() => navigate('/invoicing')} className="btn btn-outline">
               ← Back
             </button>
-            <h1 className="card-title">Invoice #{invoice.id}</h1>
+            <h1 className="card-title">Invoice #{invoice.invoice_number || invoice.id}</h1>
             <div className="flex gap-2 ml-auto">
               <button
                 onClick={() => navigate(`/invoicing/${invoice.id}/edit`)}
@@ -700,23 +844,62 @@ function EditInvoice() {
     clients,
     services,
     businessInfo,
-    getInvoiceById,
     getClientById,
-    updateInvoice
+    updateInvoice,
+    getAllDatabaseInvoices
   } = useData();
   
   const { id } = useParams();
   const navigate = useNavigate();
-  const invoice = getInvoiceById(parseInt(id));
+  const [invoice, setInvoice] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadInvoice = async () => {
+      try {
+        setLoading(true);
+        const databaseInvoices = await getAllDatabaseInvoices();
+        const foundInvoice = databaseInvoices.find(inv => inv.id === parseInt(id));
+        setInvoice(foundInvoice);
+      } catch (error) {
+        console.error('Failed to load invoice:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadInvoice();
+  }, [id, getAllDatabaseInvoices]);
   
-  const [selectedClient, setSelectedClient] = useState(
-    getClientById(invoice?.clientId)
-  );
+  const [selectedClient, setSelectedClient] = useState(null);
   const [invoiceData, setInvoiceData] = useState({
-    date: invoice?.date || '',
-    dueDate: invoice?.dueDate || '',
-    services: invoice?.services || [{ description: '', quantity: 1, rate: 0, amount: 0 }]
+    date: '',
+    dueDate: '',
+    services: [{ description: '', quantity: 1, rate: 0, amount: 0 }]
   });
+
+  useEffect(() => {
+    if (invoice) {
+      setSelectedClient(getClientById(invoice.clientId));
+      setInvoiceData({
+        date: invoice.date || '',
+        dueDate: invoice.dueDate || '',
+        services: invoice.services || [{ description: '', quantity: 1, rate: 0, amount: 0 }]
+      });
+    }
+  }, [invoice, getClientById]);
+
+  if (loading) {
+    return (
+      <div className="card">
+        <div className="card-content">
+          <div className="flex justify-center items-center py-12">
+            <div className="text-gray-600">Loading invoice...</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!invoice) {
     return (
@@ -824,17 +1007,31 @@ function EditInvoice() {
             <button onClick={() => navigate(`/invoicing/${invoice.id}`)} className="btn btn-outline">
               ← Back
             </button>
-            <h1 className="card-title">Edit Invoice #{invoice.id}</h1>
+            <h1 className="card-title">Edit Invoice #{invoice.invoice_number || invoice.id}</h1>
           </div>
         </div>
         <div className="card-content">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <SearchableClientDropdown
-                selectedClient={selectedClient}
-                onClientChange={setSelectedClient}
-                clients={clients}
-              />
+              <div>
+                <label className="block text-sm font-medium mb-2">Client *</label>
+                <select 
+                  value={selectedClient?.id || ''} 
+                  onChange={(e) => {
+                    const selectedClientData = clients.find(c => c.id === parseInt(e.target.value));
+                    setSelectedClient(selectedClientData);
+                  }}
+                  className="w-full p-3 border border-gray-300 rounded-md"
+                  required
+                >
+                  <option value="">Select a client...</option>
+                  {clients.map(client => (
+                    <option key={client.id} value={client.id}>
+                      {client.name} - {client.area} - {client.phone}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="block text-sm font-medium mb-2">Invoice Date *</label>
                 <input
@@ -954,7 +1151,7 @@ function EditInvoice() {
                   <span>${subtotal.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Tax ({(taxRate * 100).toFixed(1)}%):</span>
+                  <span>Florida Sales Tax (7.5%):</span>
                   <span>${tax.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between font-bold text-lg border-t pt-2">
@@ -988,6 +1185,7 @@ function Invoicing() {
     <Routes>
       <Route path="/" element={<InvoiceList />} />
       <Route path="/create" element={<CreateInvoice />} />
+      <Route path="/collecting/:clientId" element={<CollectingInvoiceEditor />} />
       <Route path="/:id" element={<InvoiceDetail />} />
       <Route path="/:id/edit" element={<EditInvoice />} />
     </Routes>

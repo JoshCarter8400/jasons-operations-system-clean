@@ -966,6 +966,8 @@ export async function getInvoiceByNumber(invoiceNumber) {
  */
 export async function getClientInvoices(clientId, status = null) {
   try {
+    console.log('🔍 Searching for invoices - Client ID:', clientId, 'Status:', status);
+    
     const db = createLibSQLClient(config);
     
     let sql = `SELECT * FROM invoices WHERE client_id = ?`;
@@ -978,7 +980,11 @@ export async function getClientInvoices(clientId, status = null) {
 
     sql += ` ORDER BY date DESC`;
 
+    console.log('📝 SQL Query:', sql, 'Args:', args);
+
     const result = await db.execute({ sql, args });
+    console.log('📊 Query Results:', result.rows.length, 'invoices found');
+    
     return result.rows;
   } catch (error) {
     console.error('Error getting client invoices:', error);

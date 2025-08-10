@@ -8,6 +8,14 @@ import {
   deleteClient as dbDeleteClient,
   migrateFromLocalStorage
 } from '../utils/database';
+import { insertInvoiceWithNumber, insertInvoiceLineItem, getInvoiceWithLineItems, updateInvoiceTotals, deleteInvoiceLineItems } from '../utils/databaseHelpers';
+import { 
+  createCollectingInvoice, 
+  addServiceToInvoice, 
+  sendCollectingInvoice, 
+  markInvoicePaid as dbMarkInvoicePaid, 
+  getCollectingInvoiceForClient 
+} from '../utils/invoiceHelpers';
 
 const DataContext = createContext();
 
@@ -34,6 +42,10 @@ export const DataProvider = ({ children }) => {
   const [clients, setClients] = useState([]);
   const [clientsLoaded, setClientsLoaded] = useState(false);
   const [clientsLoading, setClientsLoading] = useState(true);
+  
+  // Collecting invoices state - cache for performance
+  const [collectingInvoices, setCollectingInvoices] = useState({});
+  const [collectingInvoicesLoading, setCollectingInvoicesLoading] = useState({});
 
   // Load clients from database on mount
   useEffect(() => {
@@ -201,19 +213,41 @@ export const DataProvider = ({ children }) => {
     }
   };
 
-  const addInvoice = (invoiceData) => {
-    const newInvoice = {
-      ...invoiceData,
-      id: Math.max(...(businessData.invoices || []).map(inv => inv.id), 1000) + 1,
-      status: 'Draft',
-      sentDate: null,
-      paidDate: null
-    };
-    setBusinessData(prev => ({
-      ...prev,
-      invoices: [...(prev.invoices || []), newInvoice]
-    }));
-    return newInvoice;
+  const addInvoice = async (invoiceData) => {
+    try {
+      // Create invoice with proper numbering in database
+      const dbInvoice = await insertInvoiceWithNumber({
+        client_id: invoiceData.clientId,
+        client_name: invoiceData.clientName,
+        date: invoiceData.date,
+        due_date: invoiceData.dueDate,
+        status: 'collecting', // Manual invoices start as collecting for editing
+        subtotal: invoiceData.subtotal,
+        tax: invoiceData.tax,
+        total: invoiceData.total,
+        notes: invoiceData.notes || '',
+        sent_date: new Date().toISOString().split('T')[0],
+        paid_date: null
+      });
+
+      // Add line items to the database invoice
+      if (invoiceData.services && invoiceData.services.length > 0) {
+        for (const service of invoiceData.services) {
+          await insertInvoiceLineItem(dbInvoice.id, {
+            description: service.description,
+            quantity: service.quantity,
+            rate: service.rate,
+            amount: service.amount
+          });
+        }
+      }
+
+      console.log('✅ Created invoice in database:', dbInvoice.invoice_number);
+      return dbInvoice;
+    } catch (error) {
+      console.error('Failed to create invoice:', error);
+      throw error;
+    }
   };
 
   const updateInvoice = (id, invoiceData) => {
@@ -254,7 +288,7 @@ export const DataProvider = ({ children }) => {
             createEmailNotification(
               'receipt',
               'Payment Receipt Sent!',
-              `Receipt for Invoice #${invoice.id} sent to ${client.email}`,
+              `Receipt for Invoice #${invoice.invoice_number || invoice.id} sent to ${client.email}`,
               true
             );
           } else {
@@ -294,7 +328,7 @@ export const DataProvider = ({ children }) => {
             createEmailNotification(
               'invoice_sent',
               'Invoice Sent Successfully!',
-              `Invoice #${invoice.id} sent to ${client.email}`,
+              `Invoice #${invoice.invoice_number || invoice.id} sent to ${client.email}`,
               true
             );
             return { success: true, method: 'email', recipient: client.email };
@@ -311,7 +345,7 @@ export const DataProvider = ({ children }) => {
           createEmailNotification(
             'invoice_warning',
             'No Email Address',
-            `Invoice #${invoice.id} marked as sent - no email address on file for ${businessData.clients.find(c => c.id === invoice.clientId)?.name}`,
+            `Invoice #${invoice.invoice_number || invoice.id} marked as sent - no email address on file for ${businessData.clients.find(c => c.id === invoice.clientId)?.name}`,
             false
           );
           return { success: true, method: 'marked', note: 'No email address available' };
@@ -395,6 +429,331 @@ export const DataProvider = ({ children }) => {
     }
   };
 
+  // ============================================================================
+  // COLLECTING INVOICE FUNCTIONS - Jason's Core Workflow
+  // ============================================================================
+
+  /**
+   * Gets or creates a collecting invoice for a client
+   * This is the core of Jason's workflow - services accumulate here
+   */
+  const getCurrentCollectingInvoice = async (clientId) => {
+    try {
+      setCollectingInvoicesLoading(prev => ({ ...prev, [clientId]: true }));
+      
+      // Check cache first
+      if (collectingInvoices[clientId]) {
+        setCollectingInvoicesLoading(prev => ({ ...prev, [clientId]: false }));
+        return collectingInvoices[clientId];
+      }
+
+      // Try to get existing collecting invoice
+      let invoice = await getCollectingInvoiceForClient(clientId);
+      
+      if (!invoice) {
+        // Create new collecting invoice
+        const client = clients.find(c => c.id === clientId);
+        if (!client) {
+          throw new Error('Client not found');
+        }
+        
+        invoice = await createCollectingInvoice(clientId, client);
+      } else {
+        // Get full invoice with line items
+        invoice = await getInvoiceWithLineItems(invoice.id);
+      }
+
+      // Cache the invoice
+      setCollectingInvoices(prev => ({ ...prev, [clientId]: invoice }));
+      setCollectingInvoicesLoading(prev => ({ ...prev, [clientId]: false }));
+      
+      return invoice;
+    } catch (error) {
+      console.error('Failed to get collecting invoice:', error);
+      setCollectingInvoicesLoading(prev => ({ ...prev, [clientId]: false }));
+      throw error;
+    }
+  };
+
+  /**
+   * Adds a completed service to a client's collecting invoice
+   * This is called when Jason marks a service as complete
+   */
+  const addServiceToCollectingInvoice = async (clientId, serviceData) => {
+    try {
+      const invoice = await getCurrentCollectingInvoice(clientId);
+      
+      // Calculate amount with 7.5% tax included
+      const subtotalAmount = serviceData.quantity * serviceData.rate;
+      const taxAmount = subtotalAmount * 0.075;
+      const totalAmount = subtotalAmount + taxAmount;
+      
+      // Add service to the invoice
+      await addServiceToInvoice(invoice.id, {
+        description: serviceData.description,
+        quantity: serviceData.quantity,
+        rate: serviceData.rate,
+        amount: totalAmount // Include tax in service amount
+      });
+
+      // Get updated invoice and refresh cache
+      const updatedInvoice = await getInvoiceWithLineItems(invoice.id);
+      setCollectingInvoices(prev => ({ ...prev, [clientId]: updatedInvoice }));
+      
+      return updatedInvoice;
+    } catch (error) {
+      console.error('Failed to add service to collecting invoice:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Updates an existing service in a collecting invoice
+   * Allows Jason to edit services while in collecting mode
+   */
+  const updateServiceInCollectingInvoice = async (invoiceId, lineItemId, updatedData) => {
+    try {
+      // Get the current invoice
+      const invoice = await getInvoiceWithLineItems(invoiceId);
+      if (!invoice || invoice.status !== 'collecting') {
+        throw new Error('Can only edit collecting invoices');
+      }
+
+      // Delete old line item and create new one (simpler than complex update)
+      await deleteInvoiceLineItems([lineItemId]);
+      
+      // Calculate amount with 7.5% tax
+      const subtotalAmount = updatedData.quantity * updatedData.rate;
+      const taxAmount = subtotalAmount * 0.075;
+      const totalAmount = subtotalAmount + taxAmount;
+      
+      await insertInvoiceLineItem(invoiceId, {
+        description: updatedData.description,
+        quantity: updatedData.quantity,
+        rate: updatedData.rate,
+        amount: totalAmount
+      });
+
+      // Update invoice totals
+      await updateInvoiceTotals(invoiceId, 0.075); // 7.5% tax rate
+
+      // Refresh cache
+      const updatedInvoice = await getInvoiceWithLineItems(invoiceId);
+      const clientId = updatedInvoice.client_id;
+      setCollectingInvoices(prev => ({ ...prev, [clientId]: updatedInvoice }));
+      
+      return updatedInvoice;
+    } catch (error) {
+      console.error('Failed to update service in collecting invoice:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Removes a service from a collecting invoice
+   */
+  const removeServiceFromCollectingInvoice = async (invoiceId, lineItemId) => {
+    try {
+      const invoice = await getInvoiceWithLineItems(invoiceId);
+      if (!invoice || invoice.status !== 'collecting') {
+        throw new Error('Can only edit collecting invoices');
+      }
+
+      await deleteInvoiceLineItems([lineItemId]);
+      await updateInvoiceTotals(invoiceId, 0.075); // 7.5% tax rate
+
+      // Refresh cache
+      const updatedInvoice = await getInvoiceWithLineItems(invoiceId);
+      const clientId = updatedInvoice.client_id;
+      setCollectingInvoices(prev => ({ ...prev, [clientId]: updatedInvoice }));
+      
+      return updatedInvoice;
+    } catch (error) {
+      console.error('Failed to remove service from collecting invoice:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Sends a collecting invoice (collecting -> sent)
+   * Creates a new collecting invoice for the client automatically
+   */
+  const sendCollectingInvoiceToClient = async (invoiceId) => {
+    try {
+      const invoice = await getInvoiceWithLineItems(invoiceId);
+      if (!invoice) {
+        throw new Error('Invoice not found');
+      }
+
+      const client = clients.find(c => c.id === invoice.client_id);
+      if (!client) {
+        throw new Error('Client not found');
+      }
+
+      // Send the collecting invoice
+      const result = await sendCollectingInvoice(invoiceId, client);
+      
+      // Update cache - remove old collecting invoice and add new one
+      setCollectingInvoices(prev => ({ 
+        ...prev, 
+        [invoice.client_id]: result.newCollectingInvoice 
+      }));
+
+      // Send email if configured
+      if (client.email) {
+        const emailResult = await sendInvoiceEmail(
+          result.sentInvoice,
+          client,
+          businessData.businessInfo
+        );
+        
+        if (emailResult.success) {
+          createEmailNotification(
+            'invoice_sent',
+            'Invoice Sent Successfully!',
+            `Invoice #${result.sentInvoice.invoice_number} sent to ${client.email}`,
+            true
+          );
+        }
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Failed to send collecting invoice:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Marks an invoice as paid
+   * Uses the database helper for proper workflow
+   */
+  const markCollectingInvoicePaid = async (invoiceId, paymentMethod) => {
+    try {
+      const result = await dbMarkInvoicePaid(invoiceId, paymentMethod, 'email');
+      
+      // If this was a collecting invoice, remove from cache
+      const clientId = result.client_id;
+      if (collectingInvoices[clientId] && collectingInvoices[clientId].id === invoiceId) {
+        setCollectingInvoices(prev => {
+          const newState = { ...prev };
+          delete newState[clientId];
+          return newState;
+        });
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Failed to mark invoice as paid:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Gets all collecting invoices for display
+   */
+  const getAllCollectingInvoices = async () => {
+    try {
+      const promises = clients.map(client => getCurrentCollectingInvoice(client.id));
+      const invoices = await Promise.all(promises);
+      return invoices.filter(invoice => invoice && invoice.line_items && invoice.line_items.length > 0);
+    } catch (error) {
+      console.error('Failed to get all collecting invoices:', error);
+      return [];
+    }
+  };
+
+  /**
+   * Gets all database invoices (sent, paid, etc.) from the database
+   */
+  const getAllDatabaseInvoices = async () => {
+    try {
+      const { execute } = await import('../utils/database');
+      
+      const result = await execute(`
+        SELECT i.*, 
+               COUNT(li.id) as line_item_count
+        FROM invoices i
+        LEFT JOIN invoice_line_items li ON i.id = li.invoice_id
+        WHERE i.status != 'collecting'
+        GROUP BY i.id
+        ORDER BY i.date DESC, i.id DESC
+      `);
+
+      // Convert database format to UI format
+      const invoices = await Promise.all(
+        result.rows.map(async (invoice) => {
+          // Get line items
+          const lineItemsResult = await execute(
+            'SELECT * FROM invoice_line_items WHERE invoice_id = ? ORDER BY created_at',
+            [invoice.id]
+          );
+
+          return {
+            id: invoice.id,
+            invoice_number: invoice.invoice_number,
+            clientId: invoice.client_id,
+            clientName: invoice.client_name,
+            date: invoice.date,
+            dueDate: invoice.due_date,
+            status: invoice.status === 'sent' ? 'Sent' : invoice.status === 'paid' ? 'Paid' : invoice.status,
+            services: lineItemsResult.rows,
+            subtotal: invoice.subtotal,
+            tax: invoice.tax,
+            total: invoice.total,
+            notes: invoice.notes,
+            sentDate: invoice.sent_date,
+            paidDate: invoice.paid_date,
+            paymentMethod: invoice.payment_method
+          };
+        })
+      );
+
+      console.log(`📊 Retrieved ${invoices.length} database invoices`);
+      return invoices;
+    } catch (error) {
+      console.error('Failed to get database invoices:', error);
+      return [];
+    }
+  };
+
+  /**
+   * Mark a scheduled service as complete and add to collecting invoice
+   * This is Jason's main workflow action
+   */
+  const markServiceComplete = async (clientId, serviceDetails) => {
+    try {
+      const client = clients.find(c => c.id === clientId);
+      if (!client) {
+        throw new Error('Client not found');
+      }
+
+      // Default service data based on client profile
+      const serviceData = {
+        description: serviceDetails.description || client.serviceType || 'Service',
+        quantity: serviceDetails.quantity || 1,
+        rate: serviceDetails.rate || parseFloat(client.price?.replace(/[^0-9.]/g, '') || '0'),
+        completedDate: new Date().toISOString().split('T')[0]
+      };
+
+      // Add to collecting invoice
+      const updatedInvoice = await addServiceToCollectingInvoice(clientId, serviceData);
+
+      // Show success notification
+      createEmailNotification(
+        'service_complete',
+        'Service Added to Invoice!',
+        `${serviceData.description} added to ${client.name}'s collecting invoice`,
+        true
+      );
+
+      return updatedInvoice;
+    } catch (error) {
+      console.error('Failed to mark service complete:', error);
+      throw error;
+    }
+  };
+
   const value = {
     businessData,
     businessInfo: businessData.businessInfo,
@@ -438,6 +797,19 @@ export const DataProvider = ({ children }) => {
     searchClients,
     getClientsWithNoInvoices,
     generateOptimizedRoute,
+    
+    // Collecting Invoice Functions
+    getCurrentCollectingInvoice,
+    addServiceToCollectingInvoice,
+    updateServiceInCollectingInvoice,
+    removeServiceFromCollectingInvoice,
+    sendCollectingInvoiceToClient,
+    markCollectingInvoicePaid,
+    getAllCollectingInvoices,
+    getAllDatabaseInvoices,
+    markServiceComplete,
+    collectingInvoices,
+    collectingInvoicesLoading,
   };
 
   return (
