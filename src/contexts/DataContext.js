@@ -483,17 +483,15 @@ export const DataProvider = ({ children }) => {
     try {
       const invoice = await getCurrentCollectingInvoice(clientId);
       
-      // Calculate amount with 7.5% tax included
-      const subtotalAmount = serviceData.quantity * serviceData.rate;
-      const taxAmount = subtotalAmount * 0.075;
-      const totalAmount = subtotalAmount + taxAmount;
+      // Calculate service amount WITHOUT tax (tax calculated at invoice level)
+      const serviceAmount = serviceData.quantity * serviceData.rate;
       
       // Add service to the invoice
       await addServiceToInvoice(invoice.id, {
         description: serviceData.description,
         quantity: serviceData.quantity,
         rate: serviceData.rate,
-        amount: totalAmount // Include tax in service amount
+        amount: serviceAmount // Store amount without tax
       });
 
       // Get updated invoice and refresh cache
@@ -522,16 +520,14 @@ export const DataProvider = ({ children }) => {
       // Delete old line item and create new one (simpler than complex update)
       await deleteInvoiceLineItems([lineItemId]);
       
-      // Calculate amount with 7.5% tax
-      const subtotalAmount = updatedData.quantity * updatedData.rate;
-      const taxAmount = subtotalAmount * 0.075;
-      const totalAmount = subtotalAmount + taxAmount;
+      // Calculate service amount WITHOUT tax (tax calculated at invoice level)
+      const serviceAmount = updatedData.quantity * updatedData.rate;
       
       await insertInvoiceLineItem(invoiceId, {
         description: updatedData.description,
         quantity: updatedData.quantity,
         rate: updatedData.rate,
-        amount: totalAmount
+        amount: serviceAmount
       });
 
       // Update invoice totals

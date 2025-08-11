@@ -681,3 +681,139 @@ button:disabled {
   transform: translateY(-2px);
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
+
+/* ================================
+   Mark Service Complete Mobile Styles
+   ================================ */
+
+/* Ensure minimum touch target sizes for mobile */
+@media (max-width: 768px) {
+  .btn {
+    min-height: 44px;
+    font-size: 16px; /* Prevents iOS zoom on input focus */
+    padding: 12px 16px;
+    touch-action: manipulation; /* Disable double-tap zoom */
+  }
+  
+  .btn-sm {
+    min-height: 40px;
+    padding: 10px 14px;
+    font-size: 14px;
+  }
+  
+  /* Mark Service Complete button styling */
+  .btn-primary {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+    transition: all 0.2s ease;
+  }
+  
+  .btn-primary:hover {
+    background-color: var(--primary-dark);
+    border-color: var(--primary-dark);
+    transform: translateY(-1px);
+  }
+  
+  .btn-primary:active {
+    transform: translateY(0);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+  
+  /* Dialog/Modal mobile optimizations */
+  .fixed.inset-0 {
+    padding: 16px; /* Better spacing on mobile */
+  }
+  
+  .fixed .bg-white {
+    max-height: 90vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+  }
+  
+  /* Input field mobile optimizations */
+  input, select, textarea {
+    font-size: 16px; /* Prevents iOS zoom */
+    min-height: 44px;
+    border-radius: 8px;
+  }
+  
+  /* Success button specific styling */
+  .btn-success, .bg-green-600 {
+    background-color: #059669 !important;
+    border-color: #059669 !important;
+    color: white !important;
+  }
+  
+  .btn-success:hover, .bg-green-600:hover {
+    background-color: #047857 !important;
+    border-color: #047857 !important;
+  }
+  
+  /* Loading state improvements */
+  .animate-spin {
+    animation: spin 1s linear infinite;
+  }
+  
+  /* Ensure proper spacing in forms */
+  .space-y-4 > * + * {
+    margin-top: 16px;
+  }
+  
+  /* Grid improvements for mobile */
+  .grid-cols-2 {
+    gap: 16px;
+  }
+  
+  /* Better button layout on mobile */
+  .flex.gap-3 {
+    gap: 12px;
+  }
+  
+  .flex-2 {
+    flex: 2;
+  }
+}
+
+/* Large screen optimizations */
+@media (min-width: 769px) {
+  .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+  
+  .card-hover:hover {
+    transform: translateY(-2px);
+  }
+}
+
+/* High DPI displays */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .btn {
+    border-width: 0.5px; /* Thinner borders on retina displays */
+  }
+}
+
+/* Focus states for accessibility */
+.btn:focus,
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+/* Dark mode support (if needed in future) */
+@media (prefers-color-scheme: dark) {
+  .bg-white {
+    background-color: #1f2937;
+    color: white;
+  }
+  
+  .text-gray-700 {
+    color: #e5e7eb;
+  }
+  
+  .border-gray-300 {
+    border-color: #374151;
+  }
+}

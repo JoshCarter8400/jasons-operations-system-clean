@@ -155,17 +155,17 @@ function InvoiceList() {
 
   return (
     <div>
-      <div className="card">
-        <div className="card-header">
+      <div className="bg-white shadow-sm border border-gray-200 rounded-lg">
+        <div className="border-b border-gray-200 p-6">
           <div className="flex justify-between items-center flex-wrap gap-4">
-            <h1 className="card-title">Jason's Invoice Management</h1>
+            <h1 className="text-xl font-semibold text-gray-900">Jason's Invoice Management</h1>
             <div className="flex flex-col sm:flex-row gap-2">
-              <Link to="/invoicing/create" className="btn btn-outline min-h-[44px] py-3 px-4 font-medium">
+              <Link to="/invoicing/create" className="border-2 border-blue-500 text-blue-600 hover:bg-blue-50 min-h-[44px] py-3 px-4 font-medium rounded-lg transition-colors">
                 + Manual Invoice
               </Link>
               <button 
                 onClick={loadAllInvoices}
-                className="btn btn-secondary min-h-[44px] py-3 px-4 font-medium"
+                className="bg-gray-500 text-white hover:bg-gray-600 min-h-[44px] py-3 px-4 font-medium rounded-lg transition-colors"
               >
                 🔄 Refresh
               </button>
@@ -173,36 +173,36 @@ function InvoiceList() {
           </div>
         </div>
         
-        <div className="card-content">
+        <div className="p-6">
           {/* Tab Navigation */}
           <div className="mb-6">
-            <div className="flex border-b border-gray-200">
+            <div className="flex gap-2 flex-wrap">
               <button
                 onClick={() => setActiveTab('collecting')}
-                className={`px-6 py-4 font-medium min-h-[50px] flex-1 sm:flex-none ${
+                className={`px-6 py-4 font-medium min-h-[50px] flex-1 sm:flex-none text-base border-2 border-transparent rounded-lg transition-all duration-200 hover:shadow-md active:scale-95 ${
                   activeTab === 'collecting'
-                    ? 'text-blue-600 border-b-2 border-blue-600'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-sm'
+                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
                 }`}
               >
                 📋 Collecting ({collectingInvoices.length})
               </button>
               <button
                 onClick={() => setActiveTab('sent')}
-                className={`px-6 py-4 font-medium min-h-[50px] flex-1 sm:flex-none ${
+                className={`px-6 py-4 font-medium min-h-[50px] flex-1 sm:flex-none text-base border-2 border-transparent rounded-lg transition-all duration-200 hover:shadow-md active:scale-95 ${
                   activeTab === 'sent'
-                    ? 'text-blue-600 border-b-2 border-blue-600'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-green-50 text-green-700 border-green-200 shadow-sm'
+                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
                 }`}
               >
                 📧 Sent ({databaseInvoices.filter(i => i.status === 'Sent').length})
               </button>
               <button
                 onClick={() => setActiveTab('paid')}
-                className={`px-6 py-4 font-medium min-h-[50px] flex-1 sm:flex-none ${
+                className={`px-6 py-4 font-medium min-h-[50px] flex-1 sm:flex-none text-base border-2 border-transparent rounded-lg transition-all duration-200 hover:shadow-md active:scale-95 ${
                   activeTab === 'paid'
-                    ? 'text-blue-600 border-b-2 border-blue-600'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm'
+                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
                 }`}
               >
                 ✅ Paid ({databaseInvoices.filter(i => i.status === 'Paid').length})

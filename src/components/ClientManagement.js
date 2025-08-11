@@ -7,9 +7,8 @@ import { generateRecurringAppointmentsForClient } from '../utils/databaseHelpers
 
 
 function ClientList() {
-  const { searchClients, clientsLoading, refreshClients, markServiceComplete } = useData();
+  const { searchClients, clientsLoading, refreshClients } = useData();
   const [searchTerm, setSearchTerm] = useState('');
-  const [completingService, setCompletingService] = useState({});
   const navigate = useNavigate();
 
   const handleDelete = async (client) => {
@@ -29,27 +28,6 @@ function ClientList() {
     }
   };
 
-  const handleMarkServiceComplete = async (client) => {
-    try {
-      setCompletingService(prev => ({ ...prev, [client.id]: true }));
-      
-      // Use client's default service info
-      const serviceDetails = {
-        description: `${client.serviceType} - ${formatDate(new Date().toISOString().split('T')[0])}`,
-        quantity: 1,
-        rate: parseFloat(client.price?.replace(/[^0-9.]/g, '') || '0')
-      };
-
-      await markServiceComplete(client.id, serviceDetails);
-      
-      // Success! Service added to collecting invoice
-      setCompletingService(prev => ({ ...prev, [client.id]: false }));
-    } catch (error) {
-      console.error('Failed to mark service complete:', error);
-      alert('Failed to add service to invoice. Please try again.');
-      setCompletingService(prev => ({ ...prev, [client.id]: false }));
-    }
-  };
 
   const filteredClients = searchClients(searchTerm);
 
@@ -69,9 +47,9 @@ function ClientList() {
     <div>
       <div className="card">
         <div className="card-header">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
             <h1 className="card-title">Client Management</h1>
-            <Link to="/clients/add" className="btn btn-primary">
+            <Link to="/clients/add" className="btn btn-primary w-full sm:w-auto min-h-[44px] py-3 px-4">
               + Add Client
             </Link>
           </div>
@@ -91,49 +69,40 @@ function ClientList() {
             {filteredClients.map((client) => (
               <div key={client.id} className="card">
                 <div className="card-content">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+                    <div className="flex-1 min-w-0">
                       <h3 className="font-semibold text-lg mb-2">{client.name}</h3>
                       <p className="text-gray-600 mb-1">{client.address}</p>
                       <p className="text-gray-600 mb-1">{client.phone}</p>
                       <p className="text-gray-600 mb-2">{client.email}</p>
-                      <div className="flex gap-4 text-sm">
+                      <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 text-sm">
                         <span><strong>Service:</strong> {client.serviceType}</span>
                         <span><strong>Last:</strong> {formatDate(client.lastService)}</span>
                         <span><strong>Next:</strong> {formatDate(client.nextService)}</span>
                       </div>
                     </div>
-                    <div className="flex flex-col gap-2">
+                    <div className="flex flex-col gap-2 sm:items-end">
                       <span className={`px-2 py-1 rounded-full text-xs ${
                         client.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
                       }`}>
                         {client.status}
                       </span>
-                      <div className="flex gap-2 mb-2">
-                        <button
-                          onClick={() => handleMarkServiceComplete(client)}
-                          disabled={completingService[client.id]}
-                          className="btn btn-success btn-sm w-full"
-                        >
-                          {completingService[client.id] ? '⏳ Adding...' : '✅ Service Complete'}
-                        </button>
-                      </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-col sm:flex-row gap-2">
                         <button
                           onClick={() => navigate(`/clients/${client.id}`)}
-                          className="btn btn-outline btn-sm"
+                          className="btn btn-outline w-full sm:w-auto min-h-[44px] py-3 px-4 text-base sm:text-lg"
                         >
                           View
                         </button>
                         <button
                           onClick={() => navigate(`/clients/${client.id}/edit`)}
-                          className="btn btn-primary btn-sm"
+                          className="btn btn-primary w-full sm:w-auto min-h-[44px] py-3 px-4 text-base sm:text-lg"
                         >
                           Edit
                         </button>
                         <button
                           onClick={() => handleDelete(client)}
-                          className="btn btn-danger btn-sm"
+                          className="btn btn-outline w-full sm:w-auto min-h-[44px] py-3 px-4 text-base sm:text-lg text-red-600 border-red-600 hover:bg-red-600 hover:text-white"
                         >
                           Delete
                         </button>

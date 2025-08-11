@@ -10,6 +10,7 @@ import {
   deleteAppointment,
   deleteAllFutureAppointments,
 } from '../utils/databaseHelpers';
+import MarkServiceComplete from './MarkServiceComplete';
 
 function DailySchedule() {
   const { clients, serviceAreas, services } = useData();
@@ -305,28 +306,35 @@ function DailySchedule() {
     setShowScheduleForm(true);
   };
 
-  // Mark appointment as completed
-  const handleCompleteAppointment = async (appointmentId) => {
+  // Handle successful service completion
+  const handleServiceCompleted = async (appointment) => {
     try {
-      await updateAppointmentStatus(appointmentId, 'completed');
+      // Update appointment status to completed
+      await updateAppointmentStatus(appointment.id, 'completed');
+      
+      // Refresh appointments to show updated status
       await loadAppointmentsForDate(selectedDate);
-
-      const appointment = appointments.find((apt) => apt.id === appointmentId);
-      createEmailNotification(
-        'success',
-        '✅ Service Completed!',
-        `${appointment?.client.name} service has been marked as completed`,
-        true
-      );
+      
+      // Success notification already handled by MarkServiceComplete component
     } catch (error) {
-      console.error('Failed to complete appointment:', error);
+      console.error('Failed to update appointment status:', error);
       createEmailNotification(
         'error',
-        'Error',
-        'Failed to mark appointment as completed',
+        'Status Update Failed',
+        'Service added to invoice but failed to update appointment status',
         false
       );
     }
+  };
+
+  // Handle service completion errors
+  const handleServiceCompletionError = (errorMessage) => {
+    createEmailNotification(
+      'error',
+      'Service Completion Failed',
+      errorMessage || 'Failed to complete service',
+      false
+    );
   };
 
 
@@ -807,8 +815,8 @@ function DailySchedule() {
                   {scheduledAppointments.map((appointment) => (
                     <div key={appointment.id} className="card card-hover">
                       <div className="card-content">
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
+                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+                          <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-4 mb-2">
                               <h4 className="font-semibold text-lg">
                                 {appointment.client.name}
@@ -843,30 +851,29 @@ function DailySchedule() {
                               </p>
                             )}
                           </div>
-                          <div className="flex flex-col gap-2">
+                          <div className="flex flex-col sm:flex-row gap-2 min-w-0">
                             <button
                               onClick={() =>
                                 handleRescheduleAppointment(appointment)
                               }
-                              className="btn btn-outline btn-sm"
+                              className="btn btn-outline w-full sm:w-auto min-h-[44px] py-3 px-4 text-base sm:text-lg"
                             >
                               Reschedule
                             </button>
                             <button
                               onClick={() => handleShowDeleteModal(appointment)}
-                              className="btn btn-outline btn-sm text-red-600 border-red-600 hover:bg-red-600 hover:text-white"
+                              className="btn btn-outline w-full sm:w-auto min-h-[44px] py-3 px-4 text-base sm:text-lg text-red-600 border-red-600 hover:bg-red-600 hover:text-white"
                               style={{color: 'red', borderColor: 'red'}}
                             >
                               Delete
                             </button>
-                            <button
-                              onClick={() =>
-                                handleCompleteAppointment(appointment.id)
-                              }
-                              className="btn btn-primary btn-sm"
-                            >
-                              ✓ Complete
-                            </button>
+                            <MarkServiceComplete
+                              appointment={appointment}
+                              onComplete={handleServiceCompleted}
+                              onError={handleServiceCompletionError}
+                              size="default"
+                              className="w-full sm:w-auto min-h-[44px]"
+                            />
                           </div>
                         </div>
                       </div>
