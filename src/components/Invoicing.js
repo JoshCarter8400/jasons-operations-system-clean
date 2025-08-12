@@ -160,12 +160,12 @@ function InvoiceList() {
           <div className="flex justify-between items-center flex-wrap gap-4">
             <h1 className="text-xl font-semibold text-gray-900">Jason's Invoice Management</h1>
             <div className="flex flex-col sm:flex-row gap-2">
-              <Link to="/invoicing/create" className="border-2 border-blue-500 text-blue-600 hover:bg-blue-50 min-h-[44px] py-3 px-4 font-medium rounded-lg transition-colors">
+              <Link to="/invoicing/create" className="btn btn-primary">
                 + Manual Invoice
               </Link>
               <button 
                 onClick={loadAllInvoices}
-                className="bg-gray-500 text-white hover:bg-gray-600 min-h-[44px] py-3 px-4 font-medium rounded-lg transition-colors"
+                className="btn btn-outline"
               >
                 🔄 Refresh
               </button>
@@ -179,31 +179,19 @@ function InvoiceList() {
             <div className="flex gap-2 flex-wrap">
               <button
                 onClick={() => setActiveTab('collecting')}
-                className={`px-6 py-4 font-medium min-h-[50px] flex-1 sm:flex-none text-base border-2 border-transparent rounded-lg transition-all duration-200 hover:shadow-md active:scale-95 ${
-                  activeTab === 'collecting'
-                    ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-sm'
-                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                }`}
+                className="btn btn-primary min-h-[44px] py-3 px-4 font-medium"
               >
                 📋 Collecting ({collectingInvoices.length})
               </button>
               <button
                 onClick={() => setActiveTab('sent')}
-                className={`px-6 py-4 font-medium min-h-[50px] flex-1 sm:flex-none text-base border-2 border-transparent rounded-lg transition-all duration-200 hover:shadow-md active:scale-95 ${
-                  activeTab === 'sent'
-                    ? 'bg-green-50 text-green-700 border-green-200 shadow-sm'
-                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                }`}
+                className="btn btn-outline min-h-[44px] py-3 px-4 font-medium"
               >
                 📧 Sent ({databaseInvoices.filter(i => i.status === 'Sent').length})
               </button>
               <button
                 onClick={() => setActiveTab('paid')}
-                className={`px-6 py-4 font-medium min-h-[50px] flex-1 sm:flex-none text-base border-2 border-transparent rounded-lg transition-all duration-200 hover:shadow-md active:scale-95 ${
-                  activeTab === 'paid'
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm'
-                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                }`}
+                className="btn btn-success min-h-[44px] py-3 px-4 font-medium"
               >
                 ✅ Paid ({databaseInvoices.filter(i => i.status === 'Paid').length})
               </button>
