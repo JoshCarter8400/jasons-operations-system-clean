@@ -145,8 +145,10 @@ function InvoiceList() {
     return (
       <div className="card">
         <div className="card-content">
-          <div className="flex justify-center items-center py-12">
-            <div className="text-gray-600">Loading invoices...</div>
+          <div className="flex flex-col justify-center items-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mb-4"></div>
+            <div className="text-gray-600 text-lg">Loading invoices...</div>
+            <div className="text-gray-500 text-sm mt-2">Please wait while we load your invoice data</div>
           </div>
         </div>
       </div>
@@ -227,6 +229,7 @@ function InvoiceList() {
                         <div className="flex-1">
                           <div className="flex items-center gap-4 mb-2">
                             <h3 className="font-semibold text-lg">{invoice.client_name}</h3>
+                            {console.log('Badge status for collecting invoice:', 'collecting', typeof 'collecting')}
                             <InvoiceStatusBadge status="collecting" size="md" />
                           </div>
                           <div className="text-sm text-gray-600 space-y-1">

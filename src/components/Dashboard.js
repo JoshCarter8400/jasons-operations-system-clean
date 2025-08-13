@@ -1,14 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useData } from '../contexts/DataContext';
-import { 
-  getPendingAmount,
-  getTotalRevenue,
-  getOverdueAmount 
-} from '../data/jasonData';
 import { getEquipmentStats, getEquipmentDueForService } from '../utils/database';
+import { getAppointmentsByDate } from '../utils/databaseHelpers';
 
 function Dashboard() {
-  const { businessInfo, clients } = useData();
+  const { businessInfo, clients, getAllDatabaseInvoices } = useData();
   const [equipmentStats, setEquipmentStats] = useState({
     totalEquipment: 0,
     activeEquipment: 0,
@@ -16,15 +12,56 @@ function Dashboard() {
     conditionBreakdown: {}
   });
   const [equipmentDueForService, setEquipmentDueForService] = useState([]);
+  const [invoiceStats, setInvoiceStats] = useState({ 
+    monthlyRevenue: 0, 
+    pendingAmount: 0, 
+    overdueAmount: 0 
+  });
+  const [jobsThisWeek, setJobsThisWeek] = useState(0);
   
   const totalClients = clients.length;
   const activeClients = clients.filter(client => client.status === 'Active').length;
-  const pendingAmount = getPendingAmount();
-  const totalRevenue = getTotalRevenue();
-  const overdueAmount = getOverdueAmount();
 
   useEffect(() => {
     loadEquipmentData();
+    loadInvoiceStats();
+  }, []);
+
+  useEffect(() => {
+    const loadJobsThisWeek = async () => {
+      try {
+        const today = new Date();
+        const currentDay = today.getDay();
+        const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay;
+        const mondayOfThisWeek = new Date(today);
+        mondayOfThisWeek.setDate(today.getDate() + mondayOffset);
+        
+        let totalJobs = 0;
+        
+        // Check each day of this week
+        for (let i = 0; i < 7; i++) {
+          const checkDate = new Date(mondayOfThisWeek);
+          checkDate.setDate(mondayOfThisWeek.getDate() + i);
+          const dateStr = checkDate.toISOString().split('T')[0];
+          
+          try {
+            const dayAppointments = await getAppointmentsByDate(dateStr);
+            const scheduledCount = dayAppointments.filter(apt => apt.status === 'scheduled').length;
+            totalJobs += scheduledCount;
+          } catch (error) {
+            console.error(`Failed to load appointments for ${dateStr}:`, error);
+          }
+        }
+        
+        console.log('Jobs this week from appointments table:', totalJobs);
+        setJobsThisWeek(totalJobs);
+      } catch (error) {
+        console.error('Error loading jobs this week:', error);
+        setJobsThisWeek(0);
+      }
+    };
+    
+    loadJobsThisWeek();
   }, []);
 
   const loadEquipmentData = async () => {
@@ -39,15 +76,27 @@ function Dashboard() {
       console.error('Error loading equipment data:', error);
     }
   };
+
+  const loadInvoiceStats = async () => {
+    try {
+      const dbInvoices = await getAllDatabaseInvoices();
+      
+      // Calculate monthly revenue from paid invoices  
+      const monthlyRevenue = dbInvoices
+        .filter(invoice => invoice.status === 'Paid')
+        .reduce((sum, invoice) => sum + (invoice.total || 0), 0);
+      
+      setInvoiceStats({ 
+        monthlyRevenue, 
+        pendingAmount: 0, 
+        overdueAmount: 0 
+      });
+    } catch (error) {
+      console.error('Error loading invoice stats:', error);
+      setInvoiceStats({ monthlyRevenue: 0 });
+    }
+  };
   
-  // Calculate jobs this week (clients with next service in the next 7 days)
-  const today = new Date();
-  const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-  const jobsThisWeek = clients.filter(client => {
-    if (!client.nextService) return false;
-    const nextServiceDate = new Date(client.nextService);
-    return nextServiceDate >= today && nextServiceDate <= nextWeek;
-  }).length;
 
   // Calculate clients by area for route efficiency
   const clientsByArea = clients.reduce((acc, client) => {
@@ -97,7 +146,7 @@ function Dashboard() {
             <div className="card">
               <div className="card-content">
                 <h3>Monthly Revenue</h3>
-                <p className="text-2xl font-bold text-primary">${totalRevenue.toFixed(2)}</p>
+                <p className="text-2xl font-bold text-primary">${invoiceStats.monthlyRevenue.toFixed(2)}</p>
                 <p className="text-sm text-gray-600">Total paid</p>
               </div>
             </div>
@@ -176,7 +225,7 @@ function Dashboard() {
                 <div className="space-y-3">
                   <div className="flex justify-between">
                     <span>Pending Invoices</span>
-                    <span className="font-medium text-yellow-600">${pendingAmount.toFixed(2)}</span>
+                    <span className="font-medium text-yellow-600">${invoiceStats.pendingAmount.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Total Collected</span>
@@ -186,10 +235,10 @@ function Dashboard() {
                     <span>Outstanding Balance</span>
                     <span className="font-medium text-yellow-600">${(clients.reduce((sum, client) => sum + (client.totalInvoiced || 0), 0) - clients.reduce((sum, client) => sum + (client.totalPaid || 0), 0)).toFixed(2)}</span>
                   </div>
-                  {overdueAmount > 0 && (
+                  {invoiceStats.overdueAmount > 0 && (
                     <div className="flex justify-between">
                       <span>Overdue Amount</span>
-                      <span className="font-medium text-red-600">${overdueAmount.toFixed(2)}</span>
+                      <span className="font-medium text-red-600">${invoiceStats.overdueAmount.toFixed(2)}</span>
                     </div>
                   )}
                 </div>

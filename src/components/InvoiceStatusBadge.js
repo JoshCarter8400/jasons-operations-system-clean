@@ -9,7 +9,12 @@ function InvoiceStatusBadge({ status, size = 'sm', className = '' }) {
     switch (status?.toLowerCase()) {
       case 'collecting':
         return {
-          color: 'bg-blue-100 text-blue-800 border-blue-200',
+          color: 'border',
+          style: {
+            backgroundColor: '#dbeafe',
+            color: '#1e40af',
+            borderColor: '#bfdbfe'
+          },
           icon: '📋',
           label: 'Collecting',
           description: 'Services are being added to this invoice'
@@ -83,6 +88,7 @@ function InvoiceStatusBadge({ status, size = 'sm', className = '' }) {
         inline-flex items-center gap-1 rounded-full font-medium border
         ${config.color} ${sizeClasses} ${className}
       `.trim()}
+      style={config.style}
       title={config.description}
     >
       <span className="text-xs">{config.icon}</span>
