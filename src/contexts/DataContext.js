@@ -600,18 +600,44 @@ export const DataProvider = ({ children }) => {
    */
   const sendCollectingInvoiceToClient = async (invoiceId) => {
     try {
+      console.log('🚀 DEBUG: sendCollectingInvoiceToClient started with invoiceId:', invoiceId);
+      
       const invoice = await getInvoiceWithLineItems(invoiceId);
+      console.log('📋 DEBUG: Found invoice:', {
+        id: invoice?.id,
+        invoice_number: invoice?.invoice_number,
+        client_id: invoice?.client_id,
+        status: invoice?.status
+      });
+      
       if (!invoice) {
         throw new Error('Invoice not found');
       }
 
       const client = clients.find(c => c.id === invoice.client_id);
+      console.log('👤 DEBUG: Found client:', {
+        id: client?.id,
+        name: client?.name,
+        phone: client?.phone,
+        email: client?.email
+      });
+      
       if (!client) {
         throw new Error('Client not found');
       }
 
       // Send the collecting invoice
       const result = await sendCollectingInvoice(invoiceId, client);
+      console.log('✅ DEBUG: sendCollectingInvoice completed. Result:', {
+        sentInvoice: {
+          id: result?.sentInvoice?.id,
+          invoice_number: result?.sentInvoice?.invoice_number,
+          status: result?.sentInvoice?.status
+        },
+        newCollectingInvoice: {
+          id: result?.newCollectingInvoice?.id
+        }
+      });
       
       // Update cache - remove old collecting invoice and add new one
       setCollectingInvoices(prev => ({ 
@@ -619,27 +645,108 @@ export const DataProvider = ({ children }) => {
         [invoice.client_id]: result.newCollectingInvoice 
       }));
 
-      // Send email if configured
+      // TEMPORARY: SMS disabled during A2P registration - using email only
+      // TODO: Re-enable SMS after A2P registration completes
+      let sendResult = { success: false };
+      
+      console.log('📞 DEBUG: Checking communication methods - Phone:', client.phone, 'Email:', client.email);
+      console.log('📱 DEBUG: SMS TEMPORARILY DISABLED - skipping to email');
+      
+      /* TEMPORARILY COMMENTED OUT - SMS FUNCTIONALITY
+      if (client.phone) {
+        console.log('📱 DEBUG: Attempting SMS send to:', client.phone);
+        const { sendInvoiceSMS } = await import('../services/emailService');
+        sendResult = await sendInvoiceSMS(
+          result.sentInvoice,
+          client,
+          businessData.businessInfo
+        );
+        console.log('📱 DEBUG: SMS result:', sendResult);
+        
+        if (sendResult.success) {
+          console.log('✅ DEBUG: SMS success, creating notification');
+          createEmailNotification(
+            'invoice_sent',
+            'Invoice SMS Sent Successfully!',
+            `Invoice #${result.sentInvoice.invoice_number} sent via SMS to ${client.phone}`,
+            true
+          );
+          console.log('✅ DEBUG: SMS success notification created');
+        } else {
+          console.log('❌ DEBUG: SMS failed, creating warning notification');
+          createEmailNotification(
+            'invoice_warning',
+            'SMS Send Failed',
+            `Failed to send SMS to ${client.phone}, trying email...`,
+            false
+          );
+          console.log('❌ DEBUG: SMS failure notification created');
+        }
+      } else {
+        console.log('📱 DEBUG: No phone number, skipping SMS');
+      }
+      */
+      
+      // Try email (SMS temporarily disabled)
       if (client.email) {
+        console.log('📧 DEBUG: Attempting email send to:', client.email);
+        console.log('📧 DEBUG: Email function parameters:', {
+          invoice: {
+            id: result.sentInvoice.id,
+            invoice_number: result.sentInvoice.invoice_number,
+            total: result.sentInvoice.total
+          },
+          client: {
+            name: client.name,
+            email: client.email
+          },
+          businessInfo: businessData.businessInfo
+        });
+        
         const emailResult = await sendInvoiceEmail(
           result.sentInvoice,
           client,
           businessData.businessInfo
         );
+        console.log('📧 DEBUG: Email function returned:', emailResult);
         
         if (emailResult.success) {
+          console.log('✅ DEBUG: Email success, creating notification');
           createEmailNotification(
             'invoice_sent',
-            'Invoice Sent Successfully!',
-            `Invoice #${result.sentInvoice.invoice_number} sent to ${client.email}`,
+            'Invoice Email Sent Successfully!',
+            `Invoice #${result.sentInvoice.invoice_number} sent via email to ${client.email}`,
             true
           );
+          console.log('✅ DEBUG: Email success notification created');
+        } else {
+          console.log('❌ DEBUG: Email failed, creating error notification');
+          createEmailNotification(
+            'invoice_error',
+            'Email Send Failed',
+            `Failed to send email to ${client.email}: ${emailResult.error}`,
+            false
+          );
+          console.log('❌ DEBUG: Email failure notification created');
         }
+      } else if (!client.email) {
+        console.log('⚠️ DEBUG: No contact methods available');
+        createEmailNotification(
+          'invoice_warning',
+          'No Contact Method Available',
+          `Invoice #${result.sentInvoice.invoice_number} marked as sent - no phone or email on file for ${client.name}`,
+          false
+        );
+        console.log('⚠️ DEBUG: No contact methods notification created');
+      } else {
+        console.log('ℹ️ DEBUG: Skipping email (sendResult.success:', sendResult.success, ', client.email:', !!client.email, ')');
       }
 
+      console.log('🏁 DEBUG: sendCollectingInvoiceToClient completed successfully');
       return result;
     } catch (error) {
-      console.error('Failed to send collecting invoice:', error);
+      console.error('❌ DEBUG: sendCollectingInvoiceToClient failed:', error);
+      console.error('❌ DEBUG: Error stack:', error.stack);
       throw error;
     }
   };

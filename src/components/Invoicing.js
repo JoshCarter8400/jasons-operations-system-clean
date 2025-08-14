@@ -93,13 +93,9 @@ function InvoiceList() {
       if (activeTab === 'collecting') {
         await markCollectingInvoicePaid(invoiceId, paymentMethod);
       } else {
-        // For database invoices (sent/paid), use the database helper directly
-        const { updateInvoiceStatus } = await import('../utils/databaseHelpers');
-        const paidDate = new Date().toISOString().split('T')[0];
-        await updateInvoiceStatus(invoiceId, 'paid', { 
-          paid_date: paidDate,
-          payment_method: paymentMethod 
-        });
+        // For database invoices (sent/paid), use the enhanced helper that sends receipt emails
+        const { markInvoicePaidWithReceipt } = await import('../utils/invoiceHelpers');
+        await markInvoicePaidWithReceipt(invoiceId, paymentMethod);
       }
       
       // Refresh all data
@@ -771,7 +767,6 @@ function InvoiceDetail() {
   const {
     paymentMethods,
     getClientById,
-    markInvoicePaid,
     sendInvoice,
     getAllDatabaseInvoices
   } = useData();
@@ -780,6 +775,7 @@ function InvoiceDetail() {
   const navigate = useNavigate();
   const [invoice, setInvoice] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [markingPaid, setMarkingPaid] = useState(false);
 
   useEffect(() => {
     const loadInvoice = async () => {
@@ -825,17 +821,55 @@ function InvoiceDetail() {
 
   const handleSendInvoice = async () => {
     const client = getClientById(invoice.clientId);
+    
+    // Try SMS first if client has phone number, then fallback to email
+    let sendResult = { success: false };
+    
+    if (client?.phone) {
+      const { sendInvoiceSMS } = await import('../services/emailService');
+      sendResult = await sendInvoiceSMS(
+        invoice,
+        client,
+        { name: "Trusting and Affordable Tree Service and Lawn Care", phone: "(516) 580-1223", paymentMethods: "Zelle, Venmo, Cash App, Check" }
+      );
+      
+      if (sendResult.success) {
+        await sendInvoice(invoice.id, 'sms');
+        return;
+      }
+    }
+    
+    // Fallback to email
     const method = client && client.email ? 'email' : 'manual';
     await sendInvoice(invoice.id, method);
   };
 
   const handleMarkPaid = async () => {
-    const client = getClientById(invoice.clientId);
+    const paymentMethod = paymentMethods[0] || 'Cash';
+    const confirmed = window.confirm(
+      `Mark Invoice #${invoice.invoice_number || invoice.id} as paid? Payment method: ${paymentMethod}`
+    );
     
-    // Use existing payment method from client, or default
-    const paymentMethod = client?.paymentMethod || paymentMethods[0];
-    
-    await markInvoicePaid(invoice.id, paymentMethod);
+    if (!confirmed) return;
+
+    try {
+      setMarkingPaid(true);
+      
+      // Use the enhanced helper that sends receipt emails
+      const { markInvoicePaidWithReceipt } = await import('../utils/invoiceHelpers');
+      await markInvoicePaidWithReceipt(invoice.id, paymentMethod);
+      
+      // Refresh invoice data
+      const databaseInvoices = await getAllDatabaseInvoices();
+      const updatedInvoice = databaseInvoices.find(inv => inv.id === parseInt(id));
+      setInvoice(updatedInvoice);
+      
+    } catch (error) {
+      console.error('Failed to mark invoice as paid:', error);
+      alert('Failed to mark invoice as paid. Please try again.');
+    } finally {
+      setMarkingPaid(false);
+    }
   };
 
   return (
@@ -859,8 +893,12 @@ function InvoiceDetail() {
                 📧 Send Invoice
               </button>
               {(invoice.status === 'Pending' || invoice.status === 'Sent') && (
-                <button onClick={handleMarkPaid} className="btn btn-outline">
-                  ✓ Mark Paid
+                <button 
+                  onClick={handleMarkPaid} 
+                  disabled={markingPaid}
+                  className="btn btn-success"
+                >
+                  {markingPaid ? '⏳ Processing...' : '✓ Mark Paid'}
                 </button>
               )}
             </div>

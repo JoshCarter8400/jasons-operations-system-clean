@@ -158,6 +158,94 @@ export async function markInvoicePaid(invoiceId, paymentMethod, receiptMethod = 
 }
 
 /**
+ * Marks an invoice as paid and automatically sends receipt email
+ * @param {number} invoiceId - Invoice ID
+ * @param {string} paymentMethod - Payment method used
+ * @returns {Promise<Object>} Updated invoice with payment info and receipt status
+ */
+export async function markInvoicePaidWithReceipt(invoiceId, paymentMethod) {
+  try {
+    // First mark the invoice as paid
+    const updatedInvoice = await markInvoicePaid(invoiceId, paymentMethod, 'email');
+    
+    // Get the client information for email
+    const { getClients } = await import('./database.js');
+    const { sendPaymentReceiptEmail, createEmailNotification } = await import('../services/emailService.js');
+    const clients = await getClients();
+    const client = clients.find(c => c.id === updatedInvoice.client_id);
+    
+    if (!client) {
+      console.warn(`Client not found for invoice ${invoiceId}`);
+      return updatedInvoice;
+    }
+
+    // Send receipt email if client has email
+    if (client.email) {
+      const businessInfo = {
+        name: "Trusting and Affordable Tree Service and Lawn Care",
+        email: process.env.REACT_APP_JASON_BUSINESS_EMAIL || "trustingandaffordabletrees@gmail.com",
+        phone: process.env.REACT_APP_JASON_PHONE_NUMBER || "(516) 580-1223"
+      };
+
+      try {
+        const emailResult = await sendPaymentReceiptEmail(
+          {
+            ...updatedInvoice,
+            id: updatedInvoice.invoice_number || updatedInvoice.id,
+            paid_date: updatedInvoice.paid_date,
+            paidDate: updatedInvoice.paid_date
+          },
+          client,
+          businessInfo,
+          paymentMethod
+        );
+
+        if (emailResult.success) {
+          // Update receipt sent date
+          await updateInvoiceStatus(invoiceId, 'paid', { 
+            receipt_sent_date: new Date().toISOString().split('T')[0]
+          });
+          
+          createEmailNotification(
+            'email',
+            'Receipt Sent!',
+            `Payment receipt for Invoice #${updatedInvoice.invoice_number || updatedInvoice.id} sent to ${client.email}`,
+            true
+          );
+        } else {
+          createEmailNotification(
+            'error',
+            'Receipt Email Failed',
+            `Could not send receipt to ${client.email}. Please check email address.`,
+            false
+          );
+        }
+      } catch (emailError) {
+        console.error('Failed to send receipt email:', emailError);
+        createEmailNotification(
+          'error',
+          'Receipt Email Failed',
+          `Error sending receipt: ${emailError.message}`,
+          false
+        );
+      }
+    } else {
+      createEmailNotification(
+        'warning',
+        'No Email Address',
+        `Invoice #${updatedInvoice.invoice_number || updatedInvoice.id} marked as paid - no email address on file for ${client.name}`,
+        false
+      );
+    }
+
+    return updatedInvoice;
+  } catch (error) {
+    console.error('Error marking invoice paid with receipt:', error);
+    throw error;
+  }
+}
+
+/**
  * Gets an invoice by its invoice number
  * @param {string} invoiceNumber - Invoice number (INV-YYYY-NNNN)
  * @returns {Promise<Object|null>} Invoice object or null if not found
