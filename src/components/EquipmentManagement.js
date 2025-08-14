@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Routes, Route, Link, useNavigate, useParams } from 'react-router-dom';
 import { formatDate } from '../utils/dateUtils';
 import {
@@ -8,9 +8,7 @@ import {
   createEquipment,
   updateEquipment,
   deleteEquipment,
-  getEquipmentTypes,
-  addEquipmentService,
-  getEquipmentServiceHistory
+  getEquipmentTypes
 } from '../utils/database';
 
 function EquipmentList() {
@@ -22,11 +20,7 @@ function EquipmentList() {
   const [equipmentToDelete, setEquipmentToDelete] = useState(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    loadEquipment();
-  }, []);
-
-  const loadEquipment = async () => {
+  const loadEquipment = useCallback(async () => {
     try {
       setLoading(true);
       const data = await getEquipment();
@@ -38,7 +32,11 @@ function EquipmentList() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadEquipment();
+  }, [loadEquipment]);
 
   const handleSearch = async (term) => {
     try {
@@ -621,11 +619,7 @@ function EquipmentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    loadEquipment();
-  }, [id]);
-
-  const loadEquipment = async () => {
+  const loadEquipment = useCallback(async () => {
     try {
       setLoading(true);
       const data = await getEquipmentById(parseInt(id));
@@ -640,7 +634,11 @@ function EquipmentDetail() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    loadEquipment();
+  }, [loadEquipment]);
 
   const handleDelete = async () => {
     try {
@@ -913,11 +911,7 @@ function EditEquipment() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    loadData();
-  }, [id]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
       const [equipmentData, types] = await Promise.all([
@@ -962,7 +956,11 @@ function EditEquipment() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

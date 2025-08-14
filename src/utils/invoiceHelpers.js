@@ -5,11 +5,7 @@ import {
   getInvoiceByNumber,
   getClientInvoices,
   insertInvoiceLineItem,
-  updateInvoiceTotals,
-  deleteInvoiceLineItems,
-  updateInvoiceFields,
-  getOverdueInvoicesList,
-  getInvoiceStats
+  updateInvoiceTotals
 } from './databaseHelpers.js';
 
 /**
@@ -302,7 +298,7 @@ export async function combineLineItems(invoiceId, lineItemIds, newServiceData) {
       throw new Error('Need at least 2 line items to combine');
     }
 
-    const { deleteInvoiceLineItems, insertInvoiceLineItem, updateInvoiceTotals } = await import('./databaseHelpers.js');
+    const { deleteInvoiceLineItems } = await import('./databaseHelpers.js');
 
     // Delete old line items
     await deleteInvoiceLineItems(lineItemIds);

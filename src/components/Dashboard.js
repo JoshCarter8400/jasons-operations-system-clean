@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useData } from '../contexts/DataContext';
 import { getEquipmentStats, getEquipmentDueForService } from '../utils/database';
 import { getAppointmentsByDate } from '../utils/databaseHelpers';
@@ -22,10 +22,43 @@ function Dashboard() {
   const totalClients = clients.length;
   const activeClients = clients.filter(client => client.status === 'Active').length;
 
+  const loadEquipmentData = useCallback(async () => {
+    try {
+      const [stats, dueForService] = await Promise.all([
+        getEquipmentStats(),
+        getEquipmentDueForService()
+      ]);
+      setEquipmentStats(stats);
+      setEquipmentDueForService(dueForService);
+    } catch (error) {
+      console.error('Error loading equipment data:', error);
+    }
+  }, []);
+
+  const loadInvoiceStats = useCallback(async () => {
+    try {
+      const dbInvoices = await getAllDatabaseInvoices();
+      
+      // Calculate monthly revenue from paid invoices  
+      const monthlyRevenue = dbInvoices
+        .filter(invoice => invoice.status === 'Paid')
+        .reduce((sum, invoice) => sum + (invoice.total || 0), 0);
+      
+      setInvoiceStats({ 
+        monthlyRevenue, 
+        pendingAmount: 0, 
+        overdueAmount: 0 
+      });
+    } catch (error) {
+      console.error('Error loading invoice stats:', error);
+      setInvoiceStats({ monthlyRevenue: 0 });
+    }
+  }, [getAllDatabaseInvoices]);
+
   useEffect(() => {
     loadEquipmentData();
     loadInvoiceStats();
-  }, []);
+  }, [loadEquipmentData, loadInvoiceStats]);
 
   useEffect(() => {
     const loadJobsThisWeek = async () => {
@@ -62,39 +95,6 @@ function Dashboard() {
     
     loadJobsThisWeek();
   }, []);
-
-  const loadEquipmentData = async () => {
-    try {
-      const [stats, dueForService] = await Promise.all([
-        getEquipmentStats(),
-        getEquipmentDueForService()
-      ]);
-      setEquipmentStats(stats);
-      setEquipmentDueForService(dueForService);
-    } catch (error) {
-      console.error('Error loading equipment data:', error);
-    }
-  };
-
-  const loadInvoiceStats = async () => {
-    try {
-      const dbInvoices = await getAllDatabaseInvoices();
-      
-      // Calculate monthly revenue from paid invoices  
-      const monthlyRevenue = dbInvoices
-        .filter(invoice => invoice.status === 'Paid')
-        .reduce((sum, invoice) => sum + (invoice.total || 0), 0);
-      
-      setInvoiceStats({ 
-        monthlyRevenue, 
-        pendingAmount: 0, 
-        overdueAmount: 0 
-      });
-    } catch (error) {
-      console.error('Error loading invoice stats:', error);
-      setInvoiceStats({ monthlyRevenue: 0 });
-    }
-  };
   
 
   // Calculate clients by area for route efficiency

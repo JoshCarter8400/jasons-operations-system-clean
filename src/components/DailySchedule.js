@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useData } from '../contexts/DataContext';
 import { createEmailNotification } from '../services/emailService';
 import {
@@ -39,6 +39,17 @@ function DailySchedule() {
     recurringDay: 'Monday',
   });
 
+  // Load week appointments
+  const loadWeekAppointments = useCallback(async () => {
+    try {
+      const weekData = await getWeekAppointments(selectedDate);
+      setWeekAppointments(weekData);
+    } catch (error) {
+      console.error('❌ Failed to load week appointments:', error);
+      setWeekAppointments([]);
+    }
+  }, [selectedDate]);
+
   useEffect(() => {
     initializeSystem();
   }, []);
@@ -49,18 +60,7 @@ function DailySchedule() {
     } else {
       loadAppointmentsForDate(selectedDate);
     }
-  }, [selectedDate, viewMode]);
-
-  // Load week appointments
-  const loadWeekAppointments = async () => {
-    try {
-      const weekData = await getWeekAppointments(selectedDate);
-      setWeekAppointments(weekData);
-    } catch (error) {
-      console.error('❌ Failed to load week appointments:', error);
-      setWeekAppointments([]);
-    }
-  };
+  }, [selectedDate, viewMode, loadWeekAppointments]);
 
   // Initialize the appointment system
   const initializeSystem = async () => {
