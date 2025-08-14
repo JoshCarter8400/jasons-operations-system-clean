@@ -13,7 +13,7 @@ const BUSINESS_INFO = {
   phone: process.env.REACT_APP_JASON_PHONE_NUMBER || "(516) 580-1223",
   serviceAreas: "Sarasota, Bradenton, Nokomis, Osprey, North Venice",
   paymentMethods: "Zelle, Venmo, Cash App, Check",
-  taxRate: 0.075,
+  taxRate: 0,
   tagline: "Professional Landscape Services - Glad to be helpful",
   brandColor: "#16a34a"
 };
@@ -22,16 +22,42 @@ const BUSINESS_INFO = {
 const initEmailJS = () => {
   if (EMAILJS_PUBLIC_KEY) {
     emailjs.init(EMAILJS_PUBLIC_KEY);
-    console.log('EmailJS initialized');
   } else {
     console.warn('EmailJS public key not configured');
   }
 };
 
+// Helper function to check if notes contain meaningful content
+const hasValidNotes = (notes) => {
+  if (!notes || typeof notes !== 'string') {
+    return false;
+  }
+  
+  const trimmedNotes = notes.trim();
+  
+  // Check if notes are empty
+  if (trimmedNotes === '') {
+    return false;
+  }
+  
+  // Check for common placeholder text patterns
+  const placeholderPatterns = [
+    /^add any additional details/i,
+    /^enter additional notes/i,
+    /^additional details/i,
+    /^notes$/i,
+    /^add notes here/i,
+    /^placeholder/i,
+    /^enter notes/i,
+    /add any additional details.*special instructions.*notes.*invoice/i
+  ];
+  
+  return !placeholderPatterns.some(pattern => pattern.test(trimmedNotes));
+};
+
 // Create professional HTML email template for invoices
 const createInvoiceEmailHTML = (invoice, client, businessInfo) => {
   const subtotal = invoice.subtotal || 0;
-  const tax = invoice.tax || 0;
   const total = invoice.total || 0;
   
   const lineItems = (invoice.line_items || invoice.services || []).map(item => `
@@ -100,16 +126,20 @@ const createInvoiceEmailHTML = (invoice, client, businessInfo) => {
         </tbody>
       </table>
 
+      <!-- Notes Section -->
+      ${hasValidNotes(invoice.notes) ? `
+      <div style="background-color: #f9fafb; border-left: 4px solid ${BUSINESS_INFO.brandColor}; padding: 20px; margin-bottom: 30px;">
+        <h3 style="margin: 0 0 10px 0; color: #1f2937;">📝 Additional Notes</h3>
+        <p style="margin: 0; color: #374151; white-space: pre-wrap; line-height: 1.6;">${invoice.notes}</p>
+      </div>
+      ` : ''}
+
       <!-- Totals -->
       <div style="text-align: right; margin-bottom: 30px;">
         <div style="display: inline-block; min-width: 200px;">
           <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e5e7eb;">
             <span style="color: #6b7280;">Subtotal:</span>
             <span style="color: #1f2937; font-weight: 600;">$${subtotal.toFixed(2)}</span>
-          </div>
-          <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e5e7eb;">
-            <span style="color: #6b7280;">Tax (7.5%):</span>
-            <span style="color: #1f2937; font-weight: 600;">$${tax.toFixed(2)}</span>
           </div>
           <div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 2px solid ${BUSINESS_INFO.brandColor};">
             <span style="color: #1f2937; font-weight: bold; font-size: 18px;">Total:</span>
@@ -210,6 +240,14 @@ const createReceiptEmailHTML = (invoice, client, businessInfo, paymentMethod) =>
         </tbody>
       </table>
 
+      <!-- Notes Section -->
+      ${hasValidNotes(invoice.notes) ? `
+      <div style="background-color: #f9fafb; border-left: 4px solid ${BUSINESS_INFO.brandColor}; padding: 20px; margin-bottom: 30px;">
+        <h3 style="margin: 0 0 10px 0; color: #1f2937;">📝 Additional Details</h3>
+        <p style="margin: 0; color: #374151; white-space: pre-wrap; line-height: 1.6;">${invoice.notes}</p>
+      </div>
+      ` : ''}
+
       <!-- Thank You Message -->
       <div style="background: linear-gradient(135deg, #ecfdf5, #f0fdf4); border-radius: 12px; padding: 25px; text-align: center; margin-bottom: 30px;">
         <h3 style="margin: 0 0 10px 0; color: ${BUSINESS_INFO.brandColor};">Thank You!</h3>
@@ -274,7 +312,6 @@ const sendInvoiceEmail = async (invoice, client, businessInfo) => {
       EMAILJS_PUBLIC_KEY
     );
 
-    console.log('Invoice email sent successfully:', response);
     
     createEmailNotification(
       'email',
@@ -349,7 +386,6 @@ const sendPaymentReceiptEmail = async (invoice, client, businessInfo, paymentMet
       EMAILJS_PUBLIC_KEY
     );
 
-    console.log('Payment receipt email sent successfully:', response);
     
     createEmailNotification(
       'email',
@@ -420,7 +456,6 @@ const createEmailNotification = (type, title, message, isSuccess = true) => {
 // SMS notification placeholder for future Twilio integration
 const sendSMSNotification = async (type, phoneNumber, message) => {
   // Placeholder for future Twilio SMS integration
-  console.log(`SMS ${type} notification to ${phoneNumber}:`, message);
   
   // For now, just log the SMS that would be sent
   createEmailNotification(

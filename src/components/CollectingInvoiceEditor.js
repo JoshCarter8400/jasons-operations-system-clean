@@ -10,7 +10,10 @@ function CollectingInvoiceEditor() {
     updateServiceInCollectingInvoice,
     removeServiceFromCollectingInvoice,
     addServiceToCollectingInvoice,
+    updateCollectingInvoiceNotes,
     sendCollectingInvoiceToClient,
+    deleteInvoice,
+    checkCanDeleteInvoice,
     getClientById,
     services
   } = useData();
@@ -25,6 +28,9 @@ function CollectingInvoiceEditor() {
   const [adding, setAdding] = useState(false);
   const [sending, setSending] = useState(false);
   const [removing, setRemoving] = useState({});
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState(null);
+  const [updatingNotes, setUpdatingNotes] = useState(false);
   
   // New service form
   const [newService, setNewService] = useState({
@@ -44,6 +50,18 @@ function CollectingInvoiceEditor() {
     loadInvoiceData();
   }, [clientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Save notes when component unmounts
+  useEffect(() => {
+    return () => {
+      // Save notes on unmount if there's an invoice
+      if (invoice?.id && invoice?.notes !== undefined) {
+        updateCollectingInvoiceNotes(invoice.id, invoice.notes || '').catch(error => {
+          console.error('❌ Failed to save notes on unmount:', error);
+        });
+      }
+    };
+  }, [invoice?.id, invoice?.notes, updateCollectingInvoiceNotes]);
+
   const loadInvoiceData = async () => {
     try {
       setLoading(true);
@@ -61,13 +79,12 @@ function CollectingInvoiceEditor() {
   };
 
   const calculateTotals = () => {
-    if (!invoice || !invoice.line_items) return { subtotal: 0, tax: 0, total: 0 };
+    if (!invoice || !invoice.line_items) return { subtotal: 0, total: 0 };
     
     const subtotal = invoice.line_items.reduce((sum, item) => sum + (item.amount || 0), 0);
-    const tax = subtotal * 0.075; // 7.5% tax
-    const total = subtotal + tax;
+    const total = subtotal; // No tax applied
     
-    return { subtotal, tax, total };
+    return { subtotal, total };
   };
 
   const handleAddService = async () => {
@@ -143,6 +160,30 @@ function CollectingInvoiceEditor() {
     }
   };
 
+  const handleNotesChange = (newNotes) => {
+    // Only update local state - no database saving during typing
+    setInvoice(prev => ({
+      ...prev,
+      notes: newNotes
+    }));
+  };
+
+  const saveNotesToDatabase = async () => {
+    if (!invoice?.id) return;
+    
+    try {
+      setUpdatingNotes(true);
+      
+      await updateCollectingInvoiceNotes(invoice.id, invoice.notes || '');
+      
+    } catch (error) {
+      console.error('❌ Failed to save notes:', error);
+      alert('Failed to save notes. Please try again.');
+    } finally {
+      setUpdatingNotes(false);
+    }
+  };
+
   const handleSendInvoice = async () => {
     if (!invoice || !invoice.line_items || invoice.line_items.length === 0) {
       alert('Cannot send empty invoice. Add at least one service.');
@@ -157,6 +198,10 @@ function CollectingInvoiceEditor() {
 
     try {
       setSending(true);
+      
+      // Save notes before sending
+      await saveNotesToDatabase();
+      
       await sendCollectingInvoiceToClient(invoice.id);
       navigate('/invoicing');
     } catch (error) {
@@ -165,6 +210,76 @@ function CollectingInvoiceEditor() {
     } finally {
       setSending(false);
     }
+  };
+
+  const handleSaveAndClose = async () => {
+    try {
+      // Save notes before navigating
+      await saveNotesToDatabase();
+      navigate('/invoicing');
+    } catch (error) {
+      console.error('Failed to save before closing:', error);
+      // Navigate anyway, but warn user
+      alert('There was an issue saving your changes, but navigating anyway.');
+      navigate('/invoicing');
+    }
+  };
+
+  const handleDeleteInvoice = async () => {
+    try {
+      
+      // First, check if the invoice can be deleted
+      const safetyCheck = await checkCanDeleteInvoice(invoice.id);
+      
+      
+      if (!safetyCheck.canDelete) {
+        alert(`Cannot Delete Invoice\n\n${safetyCheck.reason}`);
+        return;
+      }
+
+      // Set up confirmation dialog with detailed invoice info
+      setDeleteConfirmation({
+        invoice: invoice,
+        client: client,
+        safetyCheck: safetyCheck
+      });
+      
+    } catch (error) {
+      console.error('❌ Error checking delete permission:', error);
+      alert('Failed to check delete permission. Please try again.');
+    }
+  };
+
+  const confirmDeleteInvoice = async () => {
+    if (!deleteConfirmation) return;
+    
+    try {
+      setDeleting(true);
+      
+
+      const result = await deleteInvoice(invoice.id);
+      
+      
+      if (result.success) {
+        // Close confirmation dialog
+        setDeleteConfirmation(null);
+        
+        // Navigate back to invoicing list
+        navigate('/invoicing');
+        
+        alert(`Invoice deleted successfully!\n\nDeleted Invoice #${result.deletedInvoice.invoice_number || invoice.id} for ${client.name}`);
+      }
+      
+    } catch (error) {
+      console.error('❌ Failed to delete invoice:', error);
+      alert(`Failed to delete invoice: ${error.message}`);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const cancelDeleteInvoice = () => {
+    setDeleteConfirmation(null);
   };
 
   const startEditingService = (lineItem) => {
@@ -288,8 +403,7 @@ function CollectingInvoiceEditor() {
                         </div>
                         <div className="md:col-span-2">
                           <div className="p-3 bg-gray-50 border border-gray-300 rounded-md">
-                            <strong>${((editService.quantity || 0) * (editService.rate || 0) * 1.075).toFixed(2)}</strong>
-                            <br /><small>inc. tax</small>
+                            <strong>${((editService.quantity || 0) * (editService.rate || 0)).toFixed(2)}</strong>
                           </div>
                         </div>
                         <div className="md:col-span-2">
@@ -315,7 +429,7 @@ function CollectingInvoiceEditor() {
                         <div className="flex-1">
                           <h4 className="font-medium">{lineItem.description}</h4>
                           <p className="text-sm text-gray-600">
-                            Qty: {lineItem.quantity} × ${lineItem.rate.toFixed(2)} = ${(lineItem.quantity * lineItem.rate * 1.075).toFixed(2)} (inc. 7.5% tax)
+                            Qty: {lineItem.quantity} × ${lineItem.rate.toFixed(2)} = ${(lineItem.quantity * lineItem.rate).toFixed(2)}
                           </p>
                         </div>
                         <div className="flex gap-2">
@@ -389,8 +503,7 @@ function CollectingInvoiceEditor() {
               </div>
               <div className="md:col-span-2">
                 <div className="p-3 bg-gray-50 border border-gray-300 rounded-md">
-                  <strong>${((newService.quantity || 0) * (newService.rate || 0) * 1.075).toFixed(2)}</strong>
-                  <br /><small>inc. tax</small>
+                  <strong>${((newService.quantity || 0) * (newService.rate || 0)).toFixed(2)}</strong>
                 </div>
               </div>
               <div className="md:col-span-2">
@@ -412,10 +525,6 @@ function CollectingInvoiceEditor() {
                 <span>Subtotal:</span>
                 <span>${totals.subtotal.toFixed(2)}</span>
               </div>
-              <div className="flex justify-between">
-                <span>Tax (7.5%):</span>
-                <span>${totals.tax.toFixed(2)}</span>
-              </div>
               <div className="flex justify-between font-bold text-lg border-t pt-2">
                 <span>Total:</span>
                 <span>${totals.total.toFixed(2)}</span>
@@ -423,24 +532,112 @@ function CollectingInvoiceEditor() {
             </div>
           </div>
 
+          {/* Notes Section */}
+          <div className="mb-6">
+            <h4 className="font-semibold text-lg mb-4">📝 Invoice Notes</h4>
+            <div className="border border-gray-200 rounded-md p-4">
+              <label className="block text-sm font-medium mb-2">
+                Additional Details or Special Instructions
+              </label>
+              <textarea
+                value={invoice?.notes || ''}
+                onChange={(e) => handleNotesChange(e.target.value)}
+                placeholder="Optional: Enter specific details about this service..."
+                className="w-full p-3 border border-gray-300 rounded-md resize-vertical min-h-[100px]"
+                disabled={updatingNotes}
+                rows={4}
+              />
+              {updatingNotes && (
+                <div className="mt-2 text-sm text-gray-500">
+                  ⏳ Saving notes...
+                </div>
+              )}
+              <div className="mt-2 text-sm text-gray-500">
+                Notes are automatically saved as you type and will be included in sent invoices.
+              </div>
+            </div>
+          </div>
+
           {/* Actions */}
-          <div className="flex gap-4">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex gap-4">
+              <button
+                onClick={handleSendInvoice}
+                disabled={sending || !invoice.line_items || invoice.line_items.length === 0}
+                className="btn btn-success"
+              >
+                {sending ? '⏳ Sending...' : '📧 Send Invoice'}
+              </button>
+              <button
+                onClick={handleSaveAndClose}
+                className="btn btn-outline"
+              >
+                Save & Close
+              </button>
+            </div>
             <button
-              onClick={handleSendInvoice}
-              disabled={sending || !invoice.line_items || invoice.line_items.length === 0}
-              className="btn btn-success"
+              onClick={handleDeleteInvoice}
+              disabled={deleting}
+              className="btn btn-danger sm:ml-auto"
             >
-              {sending ? '⏳ Sending...' : '📧 Send Invoice'}
-            </button>
-            <button
-              onClick={() => navigate('/invoicing')}
-              className="btn btn-outline"
-            >
-              Save & Close
+              {deleting ? '⏳ Deleting...' : '🗑️ Delete Invoice'}
             </button>
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {deleteConfirmation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0">
+                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                  <span className="text-red-600 text-xl">⚠️</span>
+                </div>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  Delete Collecting Invoice?
+                </h3>
+                <div className="text-sm text-gray-600 space-y-3">
+                  <p>
+                    <strong>Are you sure you want to permanently delete this invoice?</strong>
+                  </p>
+                  <div className="bg-gray-50 p-3 rounded border-l-4 border-red-400">
+                    <p><strong>Invoice:</strong> #{deleteConfirmation.invoice.invoice_number || 'Collecting'}</p>
+                    <p><strong>Client:</strong> {deleteConfirmation.client.name}</p>
+                    <p><strong>Services:</strong> {deleteConfirmation.invoice.line_items ? deleteConfirmation.invoice.line_items.length : 0} items</p>
+                    <p><strong>Total:</strong> ${calculateTotals().total.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-red-50 p-3 rounded border-l-4 border-red-500">
+                    <p className="text-red-700 font-medium">⚠️ This action cannot be undone!</p>
+                    <p className="text-red-600 text-xs mt-1">
+                      All line items and invoice data will be permanently removed from the database.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={cancelDeleteInvoice}
+                className="flex-1 btn btn-outline"
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteInvoice}
+                disabled={deleting}
+                className="flex-1 btn btn-danger"
+              >
+                {deleting ? '⏳ Deleting...' : 'Delete Invoice'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

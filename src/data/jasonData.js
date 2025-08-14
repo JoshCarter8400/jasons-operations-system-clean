@@ -5,7 +5,7 @@ export const jasonBusinessData = {
     phone: "516-580-1223",
     email: "Trustingandaffordabletrees@gmail.com",
     serviceAreas: ["Sarasota", "Bradenton", "Nokomis", "Osprey", "North Venice"],
-    taxRate: 0.075 // Florida sales tax 7.5%
+    taxRate: 0 // No tax applied per business requirements
   },
 
   services: [

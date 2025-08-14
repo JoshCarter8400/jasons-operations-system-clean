@@ -17,7 +17,6 @@ const config = {
  * Returns clients in the format expected by the UI
  */
 export async function getDatabaseClients() {
-  console.log('🔍 Loading clients from Turso database...');
   
   try {
     // Validate configuration
@@ -27,7 +26,6 @@ export async function getDatabaseClients() {
 
     // Create database client
     const db = createLibSQLClient(config);
-    console.log('✅ Database client created');
 
     // Select all clients with all fields including new recurring schedule fields
     const result = await db.execute(`
@@ -62,7 +60,6 @@ export async function getDatabaseClients() {
       ORDER BY name
     `);
 
-    console.log(`✅ Retrieved ${result.rows.length} clients from database`);
     
     // Convert database rows to client objects
     const clients = result.rows.map(row => ({
@@ -95,33 +92,6 @@ export async function getDatabaseClients() {
       next_service_date: row.next_service_date
     }));
 
-    // Log sample data for verification
-    console.log('📋 Sample client data:');
-    if (clients.length > 0) {
-      const sampleClient = clients[0];
-      console.log('   First client:', {
-        id: sampleClient.id,
-        name: sampleClient.name,
-        recurring_frequency: sampleClient.recurring_frequency,
-        recurring_day: sampleClient.recurring_day,
-        recurring_time: sampleClient.recurring_time,
-        recurring_active: sampleClient.recurring_active,
-        next_service_date: sampleClient.next_service_date
-      });
-    }
-
-    // Log clients with recurring schedules
-    const recurringClients = clients.filter(client => 
-      client.recurring_frequency && client.recurring_frequency !== 'manual'
-    );
-    console.log(`📅 Clients with recurring schedules: ${recurringClients.length}`);
-    
-    if (recurringClients.length > 0) {
-      console.log('   Recurring clients:');
-      recurringClients.forEach(client => {
-        console.log(`   - ${client.name}: ${client.recurring_frequency} on ${client.recurring_day} at ${client.recurring_time} (next: ${client.next_service_date})`);
-      });
-    }
 
     return clients;
 
@@ -145,7 +115,6 @@ export async function getDatabaseClients() {
  * @param {string} nextServiceDate - The next service date in YYYY-MM-DD format
  */
 export async function updateClientNextService(clientId, nextServiceDate) {
-  console.log(`🔄 Updating next service for client ${clientId} to ${nextServiceDate}...`);
   
   try {
     // Validate configuration
@@ -171,7 +140,6 @@ export async function updateClientNextService(clientId, nextServiceDate) {
       return { success: false, error: 'Client not found' };
     }
 
-    console.log(`✅ Updated next service for client ${clientId}`);
     return { success: true };
 
   } catch (error) {
@@ -196,7 +164,6 @@ export async function updateClientNextService(clientId, nextServiceDate) {
  * @param {boolean} recurringData.recurring_active - true/false
  */
 export async function updateClientRecurringSchedule(clientId, recurringData) {
-  console.log(`🔄 Updating recurring schedule for client ${clientId}...`, recurringData);
   
   try {
     // Validate configuration
@@ -230,7 +197,6 @@ export async function updateClientRecurringSchedule(clientId, recurringData) {
       return { success: false, error: 'Client not found' };
     }
 
-    console.log(`✅ Updated recurring schedule for client ${clientId}`);
     return { success: true };
 
   } catch (error) {
@@ -249,7 +215,6 @@ export async function updateClientRecurringSchedule(clientId, recurringData) {
  * Create appointments table if it doesn't exist
  */
 export async function initializeAppointmentsTable() {
-  console.log('🔧 Initializing appointments table...');
   
   try {
     if (!config.url) {
@@ -274,7 +239,6 @@ export async function initializeAppointmentsTable() {
       )
     `);
     
-    console.log('✅ Appointments table initialized');
     return { success: true };
   } catch (error) {
     console.error('❌ Error initializing appointments table:', error);
@@ -288,7 +252,6 @@ export async function initializeAppointmentsTable() {
  * @param {string} startDate - Start date in YYYY-MM-DD format (optional, defaults to today)
  */
 export async function generateRecurringAppointmentsForClient(clientId, startDate = null) {
-  console.log(`🔄 Generating 2-year recurring appointments for client ${clientId}...`);
   
   try {
     if (!config.url) {
@@ -310,7 +273,6 @@ export async function generateRecurringAppointmentsForClient(clientId, startDate
     const client = clientResult.rows[0];
     
     if (!client.recurring_frequency || !client.recurring_day || !client.recurring_time || !client.recurring_active) {
-      console.log(`⚠️ Client ${client.name} does not have complete recurring schedule`);
       return { success: false, error: 'Incomplete recurring schedule' };
     }
     
@@ -396,7 +358,6 @@ export async function generateRecurringAppointmentsForClient(clientId, startDate
       });
     }
     
-    console.log(`✅ Generated ${appointments.length} recurring appointments for client ${client.name}`);
     return { success: true, appointmentCount: appointments.length };
     
   } catch (error) {
@@ -420,7 +381,6 @@ function getThirdWeekDay(year, month, dayOfWeek) {
  * @param {string} date - Date in YYYY-MM-DD format
  */
 export async function getAppointmentsByDate(date) {
-  console.log(`🔍 Getting appointments for ${date}...`);
   
   try {
     if (!config.url) {
@@ -455,7 +415,6 @@ export async function getAppointmentsByDate(date) {
       }
     }));
     
-    console.log(`✅ Found ${appointments.length} appointments for ${date}`);
     return appointments;
     
   } catch (error) {
@@ -476,7 +435,6 @@ export async function getAppointmentsByDate(date) {
  * @param {string} appointmentData.status - Status (defaults to 'scheduled')
  */
 export async function createAppointment(appointmentData) {
-  console.log('🆕 Creating new appointment...', appointmentData);
   
   try {
     if (!config.url) {
@@ -500,7 +458,6 @@ export async function createAppointment(appointmentData) {
     });
     
     const appointmentId = result.lastInsertRowid;
-    console.log(`✅ Created appointment ${appointmentId}`);
     
     return { 
       success: true, 
@@ -520,7 +477,6 @@ export async function createAppointment(appointmentData) {
  * @param {string} status - New status
  */
 export async function updateAppointmentStatus(appointmentId, status) {
-  console.log(`🔄 Updating appointment ${appointmentId} status to ${status}...`);
   
   try {
     if (!config.url) {
@@ -538,7 +494,6 @@ export async function updateAppointmentStatus(appointmentId, status) {
       throw new Error(`Appointment ${appointmentId} not found`);
     }
     
-    console.log(`✅ Updated appointment ${appointmentId} status to ${status}`);
     return { success: true };
     
   } catch (error) {
@@ -554,7 +509,6 @@ export async function updateAppointmentStatus(appointmentId, status) {
  * @param {string} newTime - New time
  */
 export async function rescheduleAppointment(appointmentId, newDate, newTime) {
-  console.log(`🔄 Rescheduling appointment ${appointmentId} to ${newDate} at ${newTime}...`);
   
   try {
     if (!config.url) {
@@ -572,7 +526,6 @@ export async function rescheduleAppointment(appointmentId, newDate, newTime) {
       throw new Error(`Appointment ${appointmentId} not found`);
     }
     
-    console.log(`✅ Rescheduled appointment ${appointmentId}`);
     return { success: true };
     
   } catch (error) {
@@ -594,7 +547,6 @@ export async function rescheduleAppointment(appointmentId, newDate, newTime) {
  * @param {string} formData.recurringDay - Day of week for recurring (Monday, Tuesday, etc.)
  */
 export async function createAppointmentsFromForm(formData) {
-  console.log('📅 Creating appointments from form data...', formData);
   
   try {
     if (!config.url) {
@@ -613,7 +565,6 @@ export async function createAppointmentsFromForm(formData) {
         status: 'scheduled'
       });
       
-      console.log('✅ Created one-time appointment');
       return { success: true, appointmentCount: 1, type: 'one-time' };
       
     } else {
@@ -696,7 +647,6 @@ export async function createAppointmentsFromForm(formData) {
         await createAppointment(appointment);
       }
       
-      console.log(`✅ Created ${appointments.length} recurring appointments (${formData.recurring})`);
       return { 
         success: true, 
         appointmentCount: appointments.length, 
@@ -715,7 +665,6 @@ export async function createAppointmentsFromForm(formData) {
  * Delete a single appointment from the database
  */
 export async function deleteAppointment(appointmentId) {
-  console.log(`🗑️ Deleting appointment ${appointmentId}...`);
   
   try {
     if (!config.url) {
@@ -733,7 +682,6 @@ export async function deleteAppointment(appointmentId) {
       throw new Error(`Appointment ${appointmentId} not found`);
     }
     
-    console.log(`✅ Successfully deleted appointment ${appointmentId}`);
     return { success: true };
   } catch (error) {
     console.error('❌ Error deleting appointment:', error);
@@ -745,7 +693,6 @@ export async function deleteAppointment(appointmentId) {
  * Delete all future appointments for a client from a specified date onwards
  */
 export async function deleteAllFutureAppointments(clientId, fromDate) {
-  console.log(`🗑️ Deleting all future appointments for client ${clientId} from ${fromDate}...`);
   
   try {
     if (!config.url) {
@@ -760,7 +707,6 @@ export async function deleteAllFutureAppointments(clientId, fromDate) {
       args: [clientId, fromDate]
     });
     
-    console.log(`✅ Successfully deleted ${result.rowsAffected} future appointments for client ${clientId}`);
     return { success: true, deletedCount: result.rowsAffected };
   } catch (error) {
     console.error('❌ Error deleting future appointments:', error);
@@ -772,14 +718,11 @@ export async function deleteAllFutureAppointments(clientId, fromDate) {
  * Test function to verify database connection and client loading
  */
 export async function testDatabaseConnection() {
-  console.log('🧪 Testing database connection...');
   
   try {
     const clients = await getDatabaseClients();
-    console.log(`✅ Test successful: Retrieved ${clients.length} clients`);
     return { success: true, clientCount: clients.length, clients };
   } catch (error) {
-    console.log('❌ Test failed:', error.message);
     return { success: false, error: error.message };
   }
 }
@@ -1049,12 +992,12 @@ export async function deleteInvoiceLineItems(lineItemIds) {
 }
 
 /**
- * Recalculates and updates invoice totals based on line items
+ * Recalculates and updates invoice totals based on line items (no tax)
  * @param {number} invoiceId - Invoice ID
- * @param {number} taxRate - Tax rate (default 7.5%)
+ * @param {number} taxRate - Tax rate (ignored - no tax applied)
  * @returns {Promise<Object>} Updated totals
  */
-export async function updateInvoiceTotals(invoiceId, taxRate = 0.075) {
+export async function updateInvoiceTotals(invoiceId, taxRate = 0) {
   try {
     const db = createLibSQLClient(config);
     
@@ -1065,8 +1008,8 @@ export async function updateInvoiceTotals(invoiceId, taxRate = 0.075) {
     });
 
     const subtotal = result.rows[0].subtotal;
-    const tax = subtotal * taxRate;
-    const total = subtotal + tax;
+    const tax = 0; // No tax applied
+    const total = subtotal; // Total equals subtotal (no tax)
 
     // Update invoice totals
     await db.execute({
@@ -1200,5 +1143,159 @@ export async function getClientInvoiceSummary(clientId) {
   } catch (error) {
     console.error('Error getting client invoice summary:', error);
     throw new Error('Failed to retrieve client invoice summary');
+  }
+}
+
+/**
+ * Safely deletes an invoice with proper safety checks and foreign key handling
+ * Only allows deletion of collecting/draft invoices, never sent/paid invoices
+ * @param {number} invoiceId - Invoice ID to delete
+ * @returns {Promise<Object>} Deletion result with safety info
+ */
+export async function deleteInvoiceSafely(invoiceId) {
+  
+  try {
+    const db = createLibSQLClient(config);
+    
+    // First, get the invoice to check its status and details
+    const invoiceQuery = 'SELECT id, client_name, status, total, invoice_number FROM invoices WHERE id = ?';
+    const invoiceArgs = [invoiceId];
+    
+    const invoiceResult = await db.execute({
+      sql: invoiceQuery,
+      args: invoiceArgs
+    });
+    
+    if (invoiceResult.rows.length === 0) {
+      console.error(`❌ [deleteInvoiceSafely] Invoice ${invoiceId} NOT FOUND in database`);
+      console.error(`❌ [deleteInvoiceSafely] This indicates a cache/database synchronization issue`);
+      
+      throw new Error(`Invoice ${invoiceId} not found`);
+    }
+    
+    const invoice = invoiceResult.rows[0];
+    // Safety check: Only allow deletion of collecting/draft invoices
+    const allowedStatuses = ['collecting', 'draft'];
+    
+    if (!allowedStatuses.includes(invoice.status)) {
+      const errorMsg = `Cannot delete ${invoice.status} invoice. Only collecting/draft invoices can be deleted.`;
+      throw new Error(errorMsg);
+    }
+    
+    // Delete line items first (foreign key constraint)
+    const lineItemsQuery = 'DELETE FROM invoice_line_items WHERE invoice_id = ?';
+    const lineItemsArgs = [invoiceId];
+    
+    const deleteLineItemsResult = await db.execute({
+      sql: lineItemsQuery,
+      args: lineItemsArgs
+    });
+    
+    // Then delete the invoice
+    const deleteInvoiceQuery = 'DELETE FROM invoices WHERE id = ?';
+    const deleteInvoiceArgs = [invoiceId];
+    
+    const deleteInvoiceResult = await db.execute({
+      sql: deleteInvoiceQuery,
+      args: deleteInvoiceArgs
+    });
+    
+    
+    if (deleteInvoiceResult.rowsAffected === 0) {
+      const errorMsg = `Failed to delete invoice ${invoiceId} - no rows affected`;
+      throw new Error(errorMsg);
+    }
+    
+    
+    const result = {
+      success: true,
+      deletedInvoice: {
+        id: invoice.id,
+        client_name: invoice.client_name,
+        status: invoice.status,
+        total: invoice.total,
+        invoice_number: invoice.invoice_number
+      },
+      lineItemsDeleted: deleteLineItemsResult.rowsAffected
+    };
+    
+    return result;
+    
+  } catch (error) {
+    console.error(`❌ [deleteInvoiceSafely] Error deleting invoice ${invoiceId}:`, error);
+    console.error(`❌ [deleteInvoiceSafely] Error details:`, {
+      message: error.message,
+      code: error.code,
+      stack: error.stack,
+      invoiceId: invoiceId,
+      invoiceIdType: typeof invoiceId
+    });
+    throw error;
+  }
+}
+
+/**
+ * Checks if an invoice can be safely deleted
+ * @param {number} invoiceId - Invoice ID to check
+ * @returns {Promise<Object>} Safety check result
+ */
+export async function canDeleteInvoice(invoiceId) {
+  
+  try {
+    const db = createLibSQLClient(config);
+    
+    // Log the exact SQL query and parameters
+    const sqlQuery = 'SELECT id, client_name, status, total, invoice_number FROM invoices WHERE id = ?';
+    const queryArgs = [invoiceId];
+    
+    const result = await db.execute({
+      sql: sqlQuery,
+      args: queryArgs
+    });
+    
+    if (result.rows.length === 0) {
+      console.warn(`⚠️ [canDeleteInvoice] Invoice ${invoiceId} NOT FOUND in database`);
+      console.warn(`⚠️ [canDeleteInvoice] This suggests the invoice may exist in UI cache but not in database`);
+      
+      return {
+        canDelete: false,
+        reason: 'Invoice not found',
+        invoice: null
+      };
+    }
+    
+    const invoice = result.rows[0];
+    const allowedStatuses = ['collecting', 'draft'];
+    const canDelete = allowedStatuses.includes(invoice.status);
+    
+    const result_obj = {
+      canDelete,
+      reason: canDelete ? 'Safe to delete' : `Cannot delete ${invoice.status} invoice. Only collecting/draft invoices can be deleted.`,
+      invoice: {
+        id: invoice.id,
+        client_name: invoice.client_name,
+        status: invoice.status,
+        total: invoice.total,
+        invoice_number: invoice.invoice_number
+      }
+    };
+    
+    return result_obj;
+    
+  } catch (error) {
+    console.error(`❌ [canDeleteInvoice] Error checking if invoice ${invoiceId} can be deleted:`, error);
+    console.error(`❌ [canDeleteInvoice] Error details:`, {
+      message: error.message,
+      code: error.code,
+      stack: error.stack,
+      invoiceId: invoiceId,
+      invoiceIdType: typeof invoiceId
+    });
+    
+    return {
+      canDelete: false,
+      reason: `Error checking invoice: ${error.message}`,
+      invoice: null
+    };
   }
 }

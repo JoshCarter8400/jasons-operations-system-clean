@@ -8,7 +8,7 @@ import {
   deleteClient as dbDeleteClient,
   migrateFromLocalStorage
 } from '../utils/database';
-import { insertInvoiceWithNumber, insertInvoiceLineItem, getInvoiceWithLineItems, updateInvoiceTotals, deleteInvoiceLineItems } from '../utils/databaseHelpers';
+import { insertInvoiceWithNumber, insertInvoiceLineItem, getInvoiceWithLineItems, updateInvoiceTotals, deleteInvoiceLineItems, deleteInvoiceSafely, canDeleteInvoice } from '../utils/databaseHelpers';
 import { 
   createCollectingInvoice, 
   addServiceToInvoice, 
@@ -63,13 +63,11 @@ export const DataProvider = ({ children }) => {
           const parsed = JSON.parse(stored);
           if (parsed.clients && parsed.clients.length > 0) {
             try {
-              console.log('Attempting to migrate clients to database...');
               await migrateFromLocalStorage(parsed);
               const dbClients = await getClients();
               setClients(dbClients);
               setClientsLoaded(true);
         setClientsLoading(false);
-              console.log('Client migration successful');
             } catch (migrationError) {
               console.error('Migration failed, using localStorage data:', migrationError);
               setClients(parsed.clients || []);
@@ -242,7 +240,6 @@ export const DataProvider = ({ children }) => {
         }
       }
 
-      console.log('✅ Created invoice in database:', dbInvoice.invoice_number);
       return dbInvoice;
     } catch (error) {
       console.error('Failed to create invoice:', error);
@@ -531,7 +528,7 @@ export const DataProvider = ({ children }) => {
       });
 
       // Update invoice totals
-      await updateInvoiceTotals(invoiceId, 0.075); // 7.5% tax rate
+      await updateInvoiceTotals(invoiceId, 0); // No tax applied
 
       // Refresh cache
       const updatedInvoice = await getInvoiceWithLineItems(invoiceId);
@@ -556,7 +553,7 @@ export const DataProvider = ({ children }) => {
       }
 
       await deleteInvoiceLineItems([lineItemId]);
-      await updateInvoiceTotals(invoiceId, 0.075); // 7.5% tax rate
+      await updateInvoiceTotals(invoiceId, 0); // No tax applied
 
       // Refresh cache
       const updatedInvoice = await getInvoiceWithLineItems(invoiceId);
@@ -566,6 +563,33 @@ export const DataProvider = ({ children }) => {
       return updatedInvoice;
     } catch (error) {
       console.error('Failed to remove service from collecting invoice:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Updates the notes field in a collecting invoice
+   * Allows Jason to add special instructions or additional details
+   */
+  const updateCollectingInvoiceNotes = async (invoiceId, notes) => {
+    try {
+      const invoice = await getInvoiceWithLineItems(invoiceId);
+      if (!invoice || invoice.status !== 'collecting') {
+        throw new Error('Can only edit collecting invoices');
+      }
+
+      // Update notes in database
+      const { updateInvoiceFields } = await import('../utils/databaseHelpers');
+      await updateInvoiceFields(invoiceId, { notes: notes || '' });
+
+      // Refresh cache
+      const updatedInvoice = await getInvoiceWithLineItems(invoiceId);
+      const clientId = updatedInvoice.client_id;
+      setCollectingInvoices(prev => ({ ...prev, [clientId]: updatedInvoice }));
+      
+      return updatedInvoice;
+    } catch (error) {
+      console.error('Failed to update collecting invoice notes:', error);
       throw error;
     }
   };
@@ -660,6 +684,63 @@ export const DataProvider = ({ children }) => {
   };
 
   /**
+   * Safely deletes an invoice with proper confirmations and safety checks
+   * Only allows deletion of collecting/draft invoices, never sent/paid invoices
+   * @param {number} invoiceId - Invoice ID to delete
+   * @returns {Promise<Object>} Deletion result
+   */
+  const deleteInvoice = async (invoiceId) => {
+    try {
+      
+      // First check if the invoice can be safely deleted
+      const safetyCheck = await canDeleteInvoice(invoiceId);
+      
+      if (!safetyCheck.canDelete) {
+        throw new Error(safetyCheck.reason);
+      }
+      
+      
+      // Perform the actual deletion
+      const deleteResult = await deleteInvoiceSafely(invoiceId);
+      
+      if (deleteResult.success) {
+        // Update cache - remove the deleted invoice from collecting invoices
+        const clientId = deleteResult.deletedInvoice.id;
+        setCollectingInvoices(prev => {
+          const updated = { ...prev };
+          delete updated[clientId];
+          return updated;
+        });
+        
+      }
+      
+      return deleteResult;
+      
+    } catch (error) {
+      console.error('❌ Failed to delete invoice:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Checks if an invoice can be safely deleted (for UI state)
+   * @param {number} invoiceId - Invoice ID to check
+   * @returns {Promise<Object>} Safety check result
+   */
+  const checkCanDeleteInvoice = async (invoiceId) => {
+    try {
+      return await canDeleteInvoice(invoiceId);
+    } catch (error) {
+      console.error('Error checking delete permission:', error);
+      return {
+        canDelete: false,
+        reason: `Error: ${error.message}`,
+        invoice: null
+      };
+    }
+  };
+
+  /**
    * Gets all database invoices (sent, paid, etc.) from the database
    */
   const getAllDatabaseInvoices = async () => {
@@ -705,7 +786,6 @@ export const DataProvider = ({ children }) => {
         })
       );
 
-      console.log(`📊 Retrieved ${invoices.length} database invoices`);
       return invoices;
     } catch (error) {
       console.error('Failed to get database invoices:', error);
@@ -799,9 +879,12 @@ export const DataProvider = ({ children }) => {
     addServiceToCollectingInvoice,
     updateServiceInCollectingInvoice,
     removeServiceFromCollectingInvoice,
+    updateCollectingInvoiceNotes,
     sendCollectingInvoiceToClient,
     markCollectingInvoicePaid,
     getAllCollectingInvoices,
+    deleteInvoice,
+    checkCanDeleteInvoice,
     getAllDatabaseInvoices,
     markServiceComplete,
     collectingInvoices,

@@ -53,7 +53,6 @@ function Dashboard() {
           }
         }
         
-        console.log('Jobs this week from appointments table:', totalJobs);
         setJobsThisWeek(totalJobs);
       } catch (error) {
         console.error('Error loading jobs this week:', error);

@@ -30,11 +30,6 @@ let db = null;
 export const initializeDatabase = async () => {
   try {
     if (!db) {
-      // Debug: Show environment variables
-      console.log('🔍 Database Configuration Debug:');
-      console.log('REACT_APP_TURSO_DATABASE_URL:', process.env.REACT_APP_TURSO_DATABASE_URL);
-      console.log('REACT_APP_TURSO_AUTH_TOKEN exists:', !!process.env.REACT_APP_TURSO_AUTH_TOKEN);
-      console.log('DB_CONFIG.url:', DB_CONFIG.url);
       
       // Validate configuration
       if (!DB_CONFIG.url) {
@@ -48,7 +43,6 @@ export const initializeDatabase = async () => {
       // Create libSQL client
       db = createLibSQLClient(DB_CONFIG);
       
-      console.log('🔌 Attempting to connect to database:', DB_CONFIG.url.replace(/\/\/.*@/, '//***@'));
       
       if (DEBUG) {
         console.log('🔌 Connected to database:', DB_CONFIG.url.replace(/\/\/.*@/, '//***@'));
@@ -57,7 +51,6 @@ export const initializeDatabase = async () => {
       // Test the connection
       await db.execute('SELECT 1');
       
-      console.log('✅ Database connection verified successfully');
       
       // Initialize schema without foreign key constraints
       await initializeSchema();

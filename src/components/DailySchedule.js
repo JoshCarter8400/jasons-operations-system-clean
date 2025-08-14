@@ -56,7 +56,6 @@ function DailySchedule() {
     try {
       const weekData = await getWeekAppointments(selectedDate);
       setWeekAppointments(weekData);
-      console.log(`📅 Loaded week appointments starting from ${selectedDate}`);
     } catch (error) {
       console.error('❌ Failed to load week appointments:', error);
       setWeekAppointments([]);
@@ -67,7 +66,6 @@ function DailySchedule() {
   const initializeSystem = async () => {
     try {
       await initializeAppointmentsTable();
-      console.log('✅ Appointment system initialized');
     } catch (error) {
       console.error('❌ Failed to initialize system:', error);
       createEmailNotification(
@@ -84,9 +82,6 @@ function DailySchedule() {
     try {
       const appointmentData = await getAppointmentsByDate(date);
       setAppointments(appointmentData);
-      console.log(
-        `📅 Loaded ${appointmentData.length} appointments for ${date}`
-      );
     } catch (error) {
       console.error('❌ Failed to load appointments:', error);
       setAppointments([]);
@@ -178,10 +173,6 @@ function DailySchedule() {
     e.preventDefault();
     setIsSubmitting(true);
 
-    console.log(
-      '🚀 Starting handleScheduleService with form data:',
-      scheduleForm
-    );
 
     if (!scheduleForm.client || !scheduleForm.date || !scheduleForm.time) {
       createEmailNotification(
@@ -197,7 +188,6 @@ function DailySchedule() {
     try {
       if (scheduleForm.appointmentId) {
         // Rescheduling existing appointment
-        console.log('🔄 Rescheduling appointment:', scheduleForm.appointmentId);
         await rescheduleAppointment(
           scheduleForm.appointmentId,
           scheduleForm.date,
@@ -211,7 +201,6 @@ function DailySchedule() {
         );
       } else {
         // New appointment - use database function
-        console.log('🆕 Creating new appointment(s)...');
 
         const formData = {
           clientId: scheduleForm.client.id,
@@ -227,7 +216,6 @@ function DailySchedule() {
           recurringDay: scheduleForm.recurringDay,
         };
 
-        console.log('📝 Form data to submit:', formData);
 
         const result = await createAppointmentsFromForm(formData);
 
@@ -253,7 +241,6 @@ function DailySchedule() {
       }
 
       // Navigate to the scheduled date and refresh appointments
-      console.log('🔄 Refreshing appointments and closing form...');
       const scheduledDate = scheduleForm.date;
       if (scheduledDate !== selectedDate) {
         setSelectedDate(scheduledDate);

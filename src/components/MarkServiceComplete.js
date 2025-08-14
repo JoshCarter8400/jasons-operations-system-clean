@@ -202,9 +202,6 @@ function MarkServiceComplete({
                     ${((parseFloat(serviceDetails.rate) || 0) * (parseFloat(serviceDetails.quantity) || 1)).toFixed(2)}
                   </span>
                 </div>
-                <p className="text-xs text-green-700 mt-1">
-                  * Tax calculated on invoice total (7.5%)
-                </p>
               </div>
 
               {/* Notes */}

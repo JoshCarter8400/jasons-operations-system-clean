@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Routes, Route, Link, useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { useData } from '../contexts/DataContext';
-import { jasonBusinessData } from '../data/jasonData';
 import CollectingInvoiceEditor from './CollectingInvoiceEditor';
 import { InvoiceStatusBadge } from './InvoiceStatusBadge';
 
@@ -12,6 +11,8 @@ function InvoiceList() {
     getAllDatabaseInvoices,
     sendCollectingInvoiceToClient,
     markCollectingInvoicePaid,
+    deleteInvoice,
+    checkCanDeleteInvoice,
     paymentMethods
   } = useData();
   
@@ -21,6 +22,8 @@ function InvoiceList() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('collecting'); // 'collecting', 'sent', 'paid'
   const [sending, setSending] = useState({});
+  const [deleting, setDeleting] = useState({});
+  const [deleteConfirmation, setDeleteConfirmation] = useState(null);
   const [markingPaid, setMarkingPaid] = useState({});
   
   const navigate = useNavigate();
@@ -32,15 +35,12 @@ function InvoiceList() {
   const loadAllInvoices = async () => {
     try {
       setLoading(true);
-      console.log('🔍 Loading all invoices...');
       
       const [collecting, database] = await Promise.all([
         getAllCollectingInvoices(),
         getAllDatabaseInvoices()
       ]);
       
-      console.log('📋 Collecting invoices:', collecting.length);
-      console.log('📋 Database invoices:', database.length);
       
       setCollectingInvoices(collecting);
       setDatabaseInvoices(database);
@@ -112,6 +112,59 @@ function InvoiceList() {
     }
   };
 
+  const handleDeleteInvoice = async (invoice) => {
+    try {
+      // First, check if the invoice can be deleted
+      const safetyCheck = await checkCanDeleteInvoice(invoice.id);
+      
+      if (!safetyCheck.canDelete) {
+        alert(`Cannot Delete Invoice\n\n${safetyCheck.reason}`);
+        return;
+      }
+
+      // Set up confirmation dialog with detailed invoice info
+      setDeleteConfirmation({
+        invoice: invoice,
+        safetyCheck: safetyCheck
+      });
+      
+    } catch (error) {
+      console.error('Error checking delete permission:', error);
+      alert('Failed to check delete permission. Please try again.');
+    }
+  };
+
+  const confirmDeleteInvoice = async () => {
+    if (!deleteConfirmation) return;
+    
+    const { invoice } = deleteConfirmation;
+    
+    try {
+      setDeleting(prev => ({ ...prev, [invoice.id]: true }));
+      
+      const result = await deleteInvoice(invoice.id);
+      
+      if (result.success) {
+        // Close confirmation dialog
+        setDeleteConfirmation(null);
+        
+        // Refresh all data to reflect the deletion
+        await loadAllInvoices();
+        
+        alert(`Invoice deleted successfully!\n\nDeleted Invoice #${result.deletedInvoice.invoice_number || invoice.id} for ${result.deletedInvoice.client_name}`);
+      }
+      
+    } catch (error) {
+      console.error('Failed to delete invoice:', error);
+      alert(`Failed to delete invoice: ${error.message}`);
+    } finally {
+      setDeleting(prev => ({ ...prev, [invoice.id]: false }));
+    }
+  };
+
+  const cancelDeleteInvoice = () => {
+    setDeleteConfirmation(null);
+  };
 
   const getDisplayInvoices = () => {
     let displayInvoices = [];
@@ -135,7 +188,6 @@ function InvoiceList() {
       );
     }
 
-    console.log(`📊 Display invoices for ${activeTab} tab:`, displayInvoices.length);
     return displayInvoices;
   };
 
@@ -229,15 +281,13 @@ function InvoiceList() {
                         <div className="flex-1">
                           <div className="flex items-center gap-4 mb-2">
                             <h3 className="font-semibold text-lg">{invoice.client_name}</h3>
-                            {console.log('Badge status for collecting invoice:', 'collecting', typeof 'collecting')}
                             <InvoiceStatusBadge status="collecting" size="md" />
                           </div>
                           <div className="text-sm text-gray-600 space-y-1">
                             <p><strong>Invoice:</strong> #{invoice.invoice_number || invoice.id}</p>
                             <p><strong>Services:</strong> {invoice.line_items ? invoice.line_items.length : 0}</p>
                             <p><strong>Subtotal:</strong> ${(invoice.subtotal || 0).toFixed(2)}</p>
-                            <p><strong>Tax (7.5%):</strong> ${(invoice.tax || 0).toFixed(2)}</p>
-                            <p><strong>Total:</strong> <strong>${(invoice.total || 0).toFixed(2)}</strong></p>
+                            <p><strong>Total:</strong> <strong>${(invoice.subtotal || 0).toFixed(2)}</strong></p>
                           </div>
                         </div>
                         <div className="flex flex-col gap-3">
@@ -246,6 +296,13 @@ function InvoiceList() {
                             className="btn btn-primary min-h-[44px] py-3 px-4 font-medium"
                           >
                             📝 Edit Invoice
+                          </button>
+                          <button
+                            onClick={() => handleDeleteInvoice(invoice)}
+                            disabled={deleting[invoice.id]}
+                            className="btn btn-danger min-h-[44px] py-3 px-4 font-medium"
+                          >
+                            {deleting[invoice.id] ? '⏳ Deleting...' : '🗑️ Delete Invoice'}
                           </button>
                           <button
                             onClick={() => handleSendCollectingInvoice(invoice)}
@@ -322,6 +379,59 @@ function InvoiceList() {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {deleteConfirmation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0">
+                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                  <span className="text-red-600 text-xl">⚠️</span>
+                </div>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  Delete Collecting Invoice?
+                </h3>
+                <div className="text-sm text-gray-600 space-y-3">
+                  <p>
+                    <strong>Are you sure you want to permanently delete this invoice?</strong>
+                  </p>
+                  <div className="bg-gray-50 p-3 rounded border-l-4 border-red-400">
+                    <p><strong>Invoice:</strong> #{deleteConfirmation.invoice.invoice_number || deleteConfirmation.invoice.id}</p>
+                    <p><strong>Client:</strong> {deleteConfirmation.invoice.client_name}</p>
+                    <p><strong>Services:</strong> {deleteConfirmation.invoice.line_items ? deleteConfirmation.invoice.line_items.length : 0} items</p>
+                    <p><strong>Total:</strong> ${(deleteConfirmation.invoice.subtotal || 0).toFixed(2)}</p>
+                  </div>
+                  <div className="bg-red-50 p-3 rounded border-l-4 border-red-500">
+                    <p className="text-red-700 font-medium">⚠️ This action cannot be undone!</p>
+                    <p className="text-red-600 text-xs mt-1">
+                      All line items and invoice data will be permanently removed from the database.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={cancelDeleteInvoice}
+                className="flex-1 btn btn-outline"
+                disabled={deleting[deleteConfirmation.invoice.id]}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteInvoice}
+                disabled={deleting[deleteConfirmation.invoice.id]}
+                className="flex-1 btn btn-danger"
+              >
+                {deleting[deleteConfirmation.invoice.id] ? '⏳ Deleting...' : 'Delete Invoice'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -370,7 +480,6 @@ function CreateInvoice() {
   const {
     clients,
     services,
-    businessInfo,
     getClientById,
     addInvoice
   } = useData();
@@ -385,6 +494,7 @@ function CreateInvoice() {
   const [invoiceData, setInvoiceData] = useState({
     date: new Date().toISOString().split('T')[0],
     dueDate: '',
+    notes: '',
     services: [{ description: '', quantity: 1, rate: 0, amount: 0 }]
   });
 
@@ -436,9 +546,8 @@ function CreateInvoice() {
   };
 
   const subtotal = invoiceData.services.reduce((sum, service) => sum + service.amount, 0);
-  const taxRate = businessInfo.taxRate;
-  const tax = subtotal * taxRate;
-  const total = subtotal + tax;
+  const tax = 0; // No tax applied
+  const total = subtotal;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -457,7 +566,6 @@ function CreateInvoice() {
         total
       });
       
-      console.log('✅ Created invoice:', newInvoice.invoice_number);
       alert(`Invoice ${newInvoice.invoice_number} created successfully!`);
       navigate('/invoicing');
     } catch (error) {
@@ -617,14 +725,26 @@ function CreateInvoice() {
                   <span>Subtotal:</span>
                   <span>${subtotal.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Florida Sales Tax (7.5%):</span>
-                  <span>${tax.toFixed(2)}</span>
-                </div>
                 <div className="flex justify-between font-bold text-lg border-t pt-2">
                   <span>Total:</span>
                   <span>${total.toFixed(2)}</span>
                 </div>
+              </div>
+            </div>
+
+            {/* Notes Section */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium mb-2">📝 Invoice Notes</label>
+              <textarea
+                name="notes"
+                value={invoiceData.notes}
+                onChange={handleInputChange}
+                placeholder="Optional: Enter specific details about this service..."
+                className="w-full p-3 border border-gray-300 rounded-md resize-vertical min-h-[100px]"
+                rows={4}
+              />
+              <div className="mt-2 text-sm text-gray-500">
+                Notes will be included in sent invoices and displayed to clients.
               </div>
             </div>
 
@@ -808,15 +928,23 @@ function InvoiceDetail() {
             </div>
           </div>
 
+          {/* Notes Section */}
+          {invoice.notes && (
+            <div className="mb-8">
+              <h3 className="font-semibold text-lg mb-4">📝 Notes:</h3>
+              <div className="bg-gray-50 p-4 rounded-md border-l-4 border-blue-400">
+                <div className="whitespace-pre-wrap text-gray-700">
+                  {invoice.notes}
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="flex justify-end">
             <div className="w-full max-w-sm space-y-2">
               <div className="flex justify-between">
                 <span>Subtotal:</span>
                 <span>${invoice.subtotal.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Tax ({(jasonBusinessData.businessInfo.taxRate * 100).toFixed(1)}%):</span>
-                <span>${invoice.tax.toFixed(2)}</span>
               </div>
               <div className="flex justify-between font-bold text-lg border-t pt-2">
                 <span>Total:</span>
@@ -834,7 +962,6 @@ function EditInvoice() {
   const {
     clients,
     services,
-    businessInfo,
     getClientById,
     updateInvoice,
     getAllDatabaseInvoices
@@ -866,6 +993,7 @@ function EditInvoice() {
   const [invoiceData, setInvoiceData] = useState({
     date: '',
     dueDate: '',
+    notes: '',
     services: [{ description: '', quantity: 1, rate: 0, amount: 0 }]
   });
 
@@ -875,6 +1003,7 @@ function EditInvoice() {
       setInvoiceData({
         date: invoice.date || '',
         dueDate: invoice.dueDate || '',
+        notes: invoice.notes || '',
         services: invoice.services || [{ description: '', quantity: 1, rate: 0, amount: 0 }]
       });
     }
@@ -966,9 +1095,8 @@ function EditInvoice() {
   };
 
   const subtotal = invoiceData.services.reduce((sum, service) => sum + service.amount, 0);
-  const taxRate = businessInfo.taxRate;
-  const tax = subtotal * taxRate;
-  const total = subtotal + tax;
+  const tax = 0; // No tax applied
+  const total = subtotal;
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -977,7 +1105,7 @@ function EditInvoice() {
       return;
     }
     
-    const updatedInvoice = updateInvoice(invoice.id, {
+    updateInvoice(invoice.id, {
       clientId: selectedClient.id,
       clientName: selectedClient.name,
       ...invoiceData,
@@ -986,7 +1114,6 @@ function EditInvoice() {
       total
     });
     
-    console.log('Updated invoice:', updatedInvoice);
     navigate(`/invoicing/${invoice.id}`);
   };
 
@@ -1141,14 +1268,26 @@ function EditInvoice() {
                   <span>Subtotal:</span>
                   <span>${subtotal.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Florida Sales Tax (7.5%):</span>
-                  <span>${tax.toFixed(2)}</span>
-                </div>
                 <div className="flex justify-between font-bold text-lg border-t pt-2">
                   <span>Total:</span>
                   <span>${total.toFixed(2)}</span>
                 </div>
+              </div>
+            </div>
+
+            {/* Notes Section */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium mb-2">📝 Invoice Notes</label>
+              <textarea
+                name="notes"
+                value={invoiceData.notes}
+                onChange={handleInputChange}
+                placeholder="Optional: Enter specific details about this service..."
+                className="w-full p-3 border border-gray-300 rounded-md resize-vertical min-h-[100px]"
+                rows={4}
+              />
+              <div className="mt-2 text-sm text-gray-500">
+                Notes will be included in sent invoices and displayed to clients.
               </div>
             </div>
 

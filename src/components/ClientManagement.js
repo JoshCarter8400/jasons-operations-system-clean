@@ -19,7 +19,6 @@ function ClientList() {
     if (confirmed) {
       try {
         await deleteClient(client.id);
-        console.log('Deleted client:', client.name);
         await refreshClients();
       } catch (error) {
         console.error('Failed to delete client:', error);
@@ -147,16 +146,13 @@ function AddClient() {
     setLoading(true);
     try {
       const newClient = await addClient(formData);
-      console.log('Added client:', newClient);
       
       // Generate recurring appointments if the client has recurring settings
       if (formData.recurring_frequency && formData.recurring_day && formData.recurring_active) {
         try {
-          console.log('🔄 Auto-generating recurring appointments for new client...');
           await generateRecurringAppointmentsForClient(newClient.id);
-          console.log('✅ Generated 2-year recurring appointments for', newClient.name);
         } catch (error) {
-          console.error('❌ Failed to generate recurring appointments:', error);
+          console.error('Failed to generate recurring appointments:', error);
           alert(`Client added successfully, but failed to generate recurring appointments. You can set up the schedule later in the client edit page.`);
         }
       }
@@ -630,7 +626,6 @@ function EditClient() {
     setLoading(true);
     try {
       await updateClient(parseInt(id), formData);
-      console.log('Updated client:', formData);
       navigate(`/clients/${id}`);
     } catch (error) {
       console.error('Failed to update client:', error);

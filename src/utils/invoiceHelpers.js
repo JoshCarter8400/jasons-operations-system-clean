@@ -42,7 +42,7 @@ export async function createCollectingInvoice(clientId, clientData) {
       subtotal: 0.0,
       tax: 0.0,
       total: 0.0,
-      notes: 'Collecting services - will be sent when ready'
+      notes: ''
     };
 
     const newInvoice = await insertInvoiceWithNumber(invoiceData);
@@ -89,6 +89,7 @@ export async function sendCollectingInvoice(invoiceId, clientData) {
       throw new Error('Invoice not found');
     }
 
+
     if (invoice.status !== 'collecting') {
       throw new Error('Only collecting invoices can be sent');
     }
@@ -101,11 +102,14 @@ export async function sendCollectingInvoice(invoiceId, clientData) {
     const sentDate = new Date().toISOString().split('T')[0];
     await updateInvoiceStatus(invoiceId, 'sent', { sent_date: sentDate });
 
+    // Get the invoice again after status update to check if totals changed
+    const updatedInvoice = await getInvoiceWithLineItems(invoiceId);
+
     // Create new collecting invoice for this client
     const newCollectingInvoice = await createCollectingInvoice(invoice.client_id, clientData);
 
     return {
-      sentInvoice: { ...invoice, status: 'sent', sent_date: sentDate },
+      sentInvoice: { ...updatedInvoice, status: 'sent', sent_date: sentDate },
       newCollectingInvoice
     };
   } catch (error) {
