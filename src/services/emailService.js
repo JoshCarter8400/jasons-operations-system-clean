@@ -14,8 +14,8 @@ const TWILIO_PHONE_NUMBER = process.env.REACT_APP_TWILIO_PHONE_NUMBER;
 // Business Information
 const BUSINESS_INFO = {
   name: "Trusting and Affordable Tree Service and Lawn Care",
-  email: process.env.REACT_APP_JASON_BUSINESS_EMAIL || "trustingandaffordabletrees@gmail.com",
-  phone: process.env.REACT_APP_JASON_PHONE_NUMBER || "(516) 580-1223",
+  email: process.env.REACT_APP_JASON_BUSINESS_EMAIL,
+  phone: process.env.REACT_APP_JASON_PHONE_NUMBER,
   serviceAreas: "Sarasota, Bradenton, Nokomis, Osprey, North Venice",
   paymentMethods: "Zelle, Venmo, Cash App, Check",
   taxRate: 0,

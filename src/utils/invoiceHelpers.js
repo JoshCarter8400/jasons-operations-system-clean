@@ -179,8 +179,8 @@ export async function markInvoicePaidWithReceipt(invoiceId, paymentMethod) {
     if (client.email) {
       const businessInfo = {
         name: "Trusting and Affordable Tree Service and Lawn Care",
-        email: process.env.REACT_APP_JASON_BUSINESS_EMAIL || "trustingandaffordabletrees@gmail.com",
-        phone: process.env.REACT_APP_JASON_PHONE_NUMBER || "(516) 580-1223"
+        email: process.env.REACT_APP_JASON_BUSINESS_EMAIL,
+        phone: process.env.REACT_APP_JASON_PHONE_NUMBER
       };
 
       try {
