@@ -566,22 +566,22 @@ export const deleteClient = async (id) => {
       {
         sql: `DELETE FROM invoice_line_items 
               WHERE invoice_id IN (SELECT id FROM invoices WHERE client_id = ?)`,
-        args: [id]
+        params: [id]
       },
       // 2. Delete invoices (they reference clients)
       {
         sql: 'DELETE FROM invoices WHERE client_id = ?',
-        args: [id]
+        params: [id]
       },
       // 3. Delete appointments (they reference clients)
       {
         sql: 'DELETE FROM appointments WHERE client_id = ?',
-        args: [id]
+        params: [id]
       },
       // 4. Finally delete the client
       {
         sql: 'DELETE FROM clients WHERE id = ?',
-        args: [id]
+        params: [id]
       }
     ]);
     
