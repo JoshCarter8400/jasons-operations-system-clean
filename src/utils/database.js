@@ -51,8 +51,10 @@ export const initializeDatabase = async () => {
       // Test the connection
       await db.execute('SELECT 1');
       
+      // Enable foreign key constraints
+      await db.execute('PRAGMA foreign_keys = ON');
       
-      // Initialize schema without foreign key constraints
+      // Initialize schema with foreign key constraints
       await initializeSchema();
       
       if (DEBUG) {
@@ -68,7 +70,7 @@ export const initializeDatabase = async () => {
 };
 
 /**
- * Initialize database schema without foreign key constraints
+ * Initialize database schema with foreign key constraints
  * @returns {Promise<void>}
  */
 const initializeSchema = async () => {
@@ -110,7 +112,7 @@ const initializeSchema = async () => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
     
-    // Clients table WITHOUT foreign key constraints
+    // Clients table WITH foreign key constraints
     `CREATE TABLE IF NOT EXISTS clients (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -159,7 +161,8 @@ const initializeSchema = async () => {
       receipt_sent_date TEXT,
       receipt_delivery_method TEXT DEFAULT 'email',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
     )`,
     
     // Invoice line items table
@@ -206,7 +209,7 @@ const initializeSchema = async () => {
   await initializeDefaultData();
   
   if (DEBUG) {
-    console.log('✅ Database schema initialized without foreign key constraints');
+    console.log('✅ Database schema initialized with foreign key constraints enabled');
   }
 };
 
@@ -524,13 +527,93 @@ export const updateClient = async (id, clientData) => {
 };
 
 /**
- * Delete a client
+ * Delete a client and all associated data (invoices, line items, etc.)
+ * With foreign key constraints enabled, deletion will cascade automatically
  * @param {number} id - Client ID
- * @returns {Promise<boolean>} Success status
+ * @returns {Promise<Object>} Deletion summary with counts
  */
 export const deleteClient = async (id) => {
-  await execute('DELETE FROM clients WHERE id = ?', [id]);
-  return true;
+  try {
+    await initializeDatabase();
+    
+    if (DEBUG) {
+      console.log('🗑️ Starting client deletion for ID:', id);
+    }
+    
+    // First, get information about what will be deleted for the summary
+    const [clientInfo, invoiceCount, lineItemCount, appointmentCount] = await Promise.all([
+      execute('SELECT name FROM clients WHERE id = ?', [id]),
+      execute('SELECT COUNT(*) as count FROM invoices WHERE client_id = ?', [id]),
+      execute(`SELECT COUNT(*) as count FROM invoice_line_items ili 
+               JOIN invoices i ON ili.invoice_id = i.id 
+               WHERE i.client_id = ?`, [id]),
+      execute('SELECT COUNT(*) as count FROM appointments WHERE client_id = ?', [id])
+    ]);
+    
+    if (clientInfo.rows.length === 0) {
+      throw new Error('Client not found');
+    }
+    
+    const clientName = clientInfo.rows[0].name;
+    const numInvoices = invoiceCount.rows[0].count;
+    const numLineItems = lineItemCount.rows[0].count;
+    const numAppointments = appointmentCount.rows[0].count;
+    
+    // Execute the deletion in the correct order using transaction
+    // Delete related records first to avoid foreign key constraint errors
+    await executeTransaction([
+      // 1. Delete invoice line items first (they reference invoices)
+      {
+        sql: `DELETE FROM invoice_line_items 
+              WHERE invoice_id IN (SELECT id FROM invoices WHERE client_id = ?)`,
+        args: [id]
+      },
+      // 2. Delete invoices (they reference clients)
+      {
+        sql: 'DELETE FROM invoices WHERE client_id = ?',
+        args: [id]
+      },
+      // 3. Delete appointments (they reference clients)
+      {
+        sql: 'DELETE FROM appointments WHERE client_id = ?',
+        args: [id]
+      },
+      // 4. Finally delete the client
+      {
+        sql: 'DELETE FROM clients WHERE id = ?',
+        args: [id]
+      }
+    ]);
+    
+    const deletionSummary = {
+      success: true,
+      clientName,
+      deletedInvoices: numInvoices,
+      deletedLineItems: numLineItems,
+      deletedAppointments: numAppointments,
+      message: `Successfully deleted client "${clientName}" along with ${numInvoices} invoices, ${numLineItems} line items, and ${numAppointments} appointments.`
+    };
+    
+    if (DEBUG) {
+      console.log('✅ Client deletion completed:', deletionSummary);
+    }
+    
+    return deletionSummary;
+    
+  } catch (error) {
+    console.error('❌ Failed to delete client:', error);
+    
+    // Provide more specific error messages based on the error
+    if (error.message.includes('FOREIGN KEY constraint failed')) {
+      throw new Error('Cannot delete client due to existing references. Database transaction failed - please contact support.');
+    } else if (error.message.includes('no such table')) {
+      throw new Error('Database schema error. Please restart the application.');
+    } else if (error.message.includes('not found')) {
+      throw new Error('Client not found or already deleted.');
+    } else {
+      throw new Error(`Failed to delete client: ${error.message}`);
+    }
+  }
 };
 
 // =============================================================================

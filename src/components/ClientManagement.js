@@ -2,27 +2,41 @@ import React, { useState } from 'react';
 import { Routes, Route, Link, useNavigate, useParams } from 'react-router-dom';
 import { useData } from '../contexts/DataContext';
 import { formatDate } from '../utils/dateUtils';
-import { deleteClient } from '../utils/database.js';
 import { generateRecurringAppointmentsForClient } from '../utils/databaseHelpers';
 
 
 function ClientList() {
-  const { searchClients, clientsLoading, refreshClients } = useData();
+  const { searchClients, clientsLoading, deleteClient, getAllDatabaseInvoices } = useData();
   const [searchTerm, setSearchTerm] = useState('');
   const navigate = useNavigate();
 
   const handleDelete = async (client) => {
-    const confirmed = window.confirm(
-      `Are you sure you want to delete ${client.name}? This action cannot be undone.`
-    );
+    // Get invoice count for this client to show in confirmation
+    const allInvoices = await getAllDatabaseInvoices();
+    const clientInvoices = allInvoices.filter(invoice => invoice.client_id === client.id);
+    
+    const confirmMessage = `⚠️ DELETE CLIENT CONFIRMATION ⚠️
+
+This will permanently delete:
+• Client: ${client.name}
+• ${clientInvoices.length} invoice(s) associated with this client
+• All service line items from those invoices
+
+This action CANNOT be undone and will remove all business history with this client.
+
+Are you sure you want to proceed?`;
+    
+    const confirmed = window.confirm(confirmMessage);
     
     if (confirmed) {
       try {
         await deleteClient(client.id);
-        await refreshClients();
+        
+        // Show success message with summary
+        alert(`✅ Client "${client.name}" deleted successfully with ${clientInvoices.length} invoice(s) and associated appointments.`);
       } catch (error) {
         console.error('Failed to delete client:', error);
-        alert('Failed to delete client. Please try again.');
+        alert(`❌ Failed to delete client: ${error.message}\n\nThis may be due to database constraints. Please try again or contact support.`);
       }
     }
   };
