@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { invoices as initialInvoices } from '../data/jasonData';
+import { jasonBusinessData, invoices as initialInvoices } from '../data/jasonData';
 import { sendInvoiceEmail, sendPaymentReceiptEmail, createEmailNotification } from '../services/emailService';
 import {
   getClients,
@@ -8,11 +8,6 @@ import {
   deleteClient as dbDeleteClient,
   migrateFromLocalStorage
 } from '../utils/database';
-import {
-  migrateBusinessSettingsToDatabase,
-  loadBusinessSettingsWithFallback,
-  saveBusinessSettingsToDatabase
-} from '../utils/businessSettingsMigration';
 import { insertInvoiceWithNumber, insertInvoiceLineItem, getInvoiceWithLineItems, updateInvoiceTotals, deleteInvoiceLineItems, deleteInvoiceSafely, canDeleteInvoice } from '../utils/databaseHelpers';
 import { 
   createCollectingInvoice, 
@@ -33,17 +28,16 @@ export const useData = () => {
 };
 
 export const DataProvider = ({ children }) => {
-  // EMERGENCY FIX: Business settings now loaded from database instead of localStorage
-  const [businessData, setBusinessData] = useState({
-    businessInfo: { name: 'Loading...', phone: '', email: '', taxRate: 0, serviceAreas: [] },
-    services: [],
-    paymentMethods: [],
-    clients: [],
-    invoices: initialInvoices
+  const [businessData, setBusinessData] = useState(() => {
+    // Keep localStorage for non-client data (business info, services, payment methods, invoices)
+    // Only clients will be moved to database
+    const stored = localStorage.getItem('jasonBusinessData');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return { ...parsed, clients: [] }; // Empty clients array - will be loaded from database
+    }
+    return { ...jasonBusinessData, clients: [], invoices: initialInvoices };
   });
-  
-  // eslint-disable-next-line no-unused-vars
-  const [businessDataLoading, setBusinessDataLoading] = useState(true);
 
   const [clients, setClients] = useState([]);
   const [clientsLoaded, setClientsLoaded] = useState(false);
@@ -53,303 +47,138 @@ export const DataProvider = ({ children }) => {
   const [collectingInvoices, setCollectingInvoices] = useState({});
   const [collectingInvoicesLoading, setCollectingInvoicesLoading] = useState({});
 
-  // CRITICAL: Load business settings from database on mount
+  // Load clients from database on mount
   useEffect(() => {
-    const initializeData = async () => {
-      console.log('🚨 EMERGENCY: Starting business settings migration...');
-      
+    const loadClients = async () => {
       try {
-        // Step 1: Migrate business settings to database if needed
-        const migrationResult = await migrateBusinessSettingsToDatabase();
-        console.log('📋 Migration result:', migrationResult);
-        
-        // Step 2: Load business settings from database
-        const settingsResult = await loadBusinessSettingsWithFallback();
-        console.log('✅ Loaded business settings:', settingsResult.source);
-        
-        if (settingsResult.success) {
-          setBusinessData(prev => ({
-            ...prev,
-            businessInfo: settingsResult.data.businessInfo,
-            services: settingsResult.data.services,
-            paymentMethods: settingsResult.data.paymentMethods
-          }));
-        }
-        setBusinessDataLoading(false);
-        
-        // Step 3: Load clients from database
         const dbClients = await getClients();
         setClients(dbClients);
         setClientsLoaded(true);
         setClientsLoading(false);
-        
-        console.log('✅ Data initialization complete');
-        
       } catch (error) {
-        console.error('❌ Data initialization failed:', error);
-        
-        // Fallback to localStorage for clients if database fails
+        console.error('Failed to load clients from database:', error);
+        // Try to migrate from localStorage if database fails
         const stored = localStorage.getItem('jasonBusinessData');
         if (stored) {
-          try {
-            const parsed = JSON.parse(stored);
-            if (parsed.clients && parsed.clients.length > 0) {
+          const parsed = JSON.parse(stored);
+          if (parsed.clients && parsed.clients.length > 0) {
+            try {
               await migrateFromLocalStorage(parsed);
               const dbClients = await getClients();
               setClients(dbClients);
+              setClientsLoaded(true);
+        setClientsLoading(false);
+            } catch (migrationError) {
+              console.error('Migration failed, using localStorage data:', migrationError);
+              setClients(parsed.clients || []);
+              setClientsLoaded(true);
+        setClientsLoading(false);
             }
-          } catch (migrationError) {
-            console.error('Client migration failed:', migrationError);
+          } else {
+            setClients([]);
+            setClientsLoaded(true);
+        setClientsLoading(false);
           }
         }
-        
-        setBusinessDataLoading(false);
-        setClientsLoading(false);
       }
     };
     
-    initializeData();
+    loadClients();
   }, []);
 
-  // REMOVED: No longer saving business settings to localStorage
-  // Settings are now saved directly to database via individual functions
+  // Save non-client data to localStorage
+  useEffect(() => {
+    const dataToStore = {
+      ...businessData,
+      clients: [] // Don't store clients in localStorage anymore
+    };
+    localStorage.setItem('jasonBusinessData', JSON.stringify(dataToStore));
+  }, [businessData]);
 
-  const updateBusinessInfo = async (updates) => {
-    try {
-      // Update database with full business settings
-      const currentSettings = {
-        name: updates.name || businessData.businessInfo.name,
-        phone: updates.phone || businessData.businessInfo.phone,
-        email: updates.email || businessData.businessInfo.email,
-        taxRate: updates.taxRate !== undefined ? updates.taxRate : businessData.businessInfo.taxRate,
-        serviceAreas: businessData.businessInfo.serviceAreas,
-        services: businessData.services,
-        paymentMethods: businessData.paymentMethods
-      };
-      
-      const result = await saveBusinessSettingsToDatabase(currentSettings);
-      if (result.success) {
-        // Update local state
-        setBusinessData(prev => ({
-          ...prev,
-          businessInfo: { ...prev.businessInfo, ...updates }
-        }));
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Failed to update business info:', error);
-      return false;
-    }
+  const updateBusinessInfo = (updates) => {
+    setBusinessData(prev => ({
+      ...prev,
+      businessInfo: { ...prev.businessInfo, ...updates }
+    }));
   };
 
-  const addServiceArea = async (areaName) => {
+  const addServiceArea = (areaName) => {
     if (areaName && !businessData.businessInfo.serviceAreas.includes(areaName)) {
-      try {
-        const newServiceAreas = [...businessData.businessInfo.serviceAreas, areaName];
-        const currentSettings = {
-          name: businessData.businessInfo.name,
-          phone: businessData.businessInfo.phone,
-          email: businessData.businessInfo.email,
-          taxRate: businessData.businessInfo.taxRate,
-          serviceAreas: newServiceAreas,
-          services: businessData.services,
-          paymentMethods: businessData.paymentMethods
-        };
-        
-        const result = await saveBusinessSettingsToDatabase(currentSettings);
-        if (result.success) {
-          setBusinessData(prev => ({
-            ...prev,
-            businessInfo: {
-              ...prev.businessInfo,
-              serviceAreas: newServiceAreas
-            }
-          }));
-          return true;
+      setBusinessData(prev => ({
+        ...prev,
+        businessInfo: {
+          ...prev.businessInfo,
+          serviceAreas: [...prev.businessInfo.serviceAreas, areaName]
         }
-      } catch (error) {
-        console.error('Failed to add service area:', error);
-      }
+      }));
+      return true;
     }
     return false;
   };
 
-  const removeServiceArea = async (areaName) => {
-    try {
-      const newServiceAreas = businessData.businessInfo.serviceAreas.filter(area => area !== areaName);
-      const currentSettings = {
-        name: businessData.businessInfo.name,
-        phone: businessData.businessInfo.phone,
-        email: businessData.businessInfo.email,
-        taxRate: businessData.businessInfo.taxRate,
-        serviceAreas: newServiceAreas,
-        services: businessData.services,
-        paymentMethods: businessData.paymentMethods
-      };
-      
-      const result = await saveBusinessSettingsToDatabase(currentSettings);
-      if (result.success) {
-        setBusinessData(prev => ({
-          ...prev,
-          businessInfo: {
-            ...prev.businessInfo,
-            serviceAreas: newServiceAreas
-          }
-        }));
-        return true;
+  const removeServiceArea = (areaName) => {
+    setBusinessData(prev => ({
+      ...prev,
+      businessInfo: {
+        ...prev.businessInfo,
+        serviceAreas: prev.businessInfo.serviceAreas.filter(area => area !== areaName)
       }
-    } catch (error) {
-      console.error('Failed to remove service area:', error);
-    }
-    return false;
+    }));
+    return true;
   };
 
-  const addService = async (serviceData) => {
+  const addService = (serviceData) => {
     const { name, priceRange, defaultRate } = serviceData;
     if (name && !businessData.services.find(s => s.name === name)) {
-      try {
-        const newService = {
-          name,
-          priceRange: priceRange || '$0-$100',
-          defaultRate: defaultRate || 0
-        };
-        const newServices = [...businessData.services, newService];
-        const currentSettings = {
-          name: businessData.businessInfo.name,
-          phone: businessData.businessInfo.phone,
-          email: businessData.businessInfo.email,
-          taxRate: businessData.businessInfo.taxRate,
-          serviceAreas: businessData.businessInfo.serviceAreas,
-          services: newServices,
-          paymentMethods: businessData.paymentMethods
-        };
-        
-        const result = await saveBusinessSettingsToDatabase(currentSettings);
-        if (result.success) {
-          setBusinessData(prev => ({
-            ...prev,
-            services: newServices
-          }));
-          return true;
-        }
-      } catch (error) {
-        console.error('Failed to add service:', error);
-      }
-    }
-    return false;
-  };
-
-  const removeService = async (serviceName) => {
-    try {
-      const newServices = businessData.services.filter(s => s.name !== serviceName);
-      const currentSettings = {
-        name: businessData.businessInfo.name,
-        phone: businessData.businessInfo.phone,
-        email: businessData.businessInfo.email,
-        taxRate: businessData.businessInfo.taxRate,
-        serviceAreas: businessData.businessInfo.serviceAreas,
-        services: newServices,
-        paymentMethods: businessData.paymentMethods
+      const newService = {
+        name,
+        priceRange: priceRange || '$0-$100',
+        defaultRate: defaultRate || 0
       };
-      
-      const result = await saveBusinessSettingsToDatabase(currentSettings);
-      if (result.success) {
-        setBusinessData(prev => ({
-          ...prev,
-          services: newServices
-        }));
-        return true;
-      }
-    } catch (error) {
-      console.error('Failed to remove service:', error);
+      setBusinessData(prev => ({
+        ...prev,
+        services: [...prev.services, newService]
+      }));
+      return true;
     }
     return false;
   };
 
-  const updateService = async (serviceName, serviceData) => {
-    try {
-      const newServices = businessData.services.map(s => 
+  const removeService = (serviceName) => {
+    setBusinessData(prev => ({
+      ...prev,
+      services: prev.services.filter(s => s.name !== serviceName)
+    }));
+    return true;
+  };
+
+  const updateService = (serviceName, serviceData) => {
+    setBusinessData(prev => ({
+      ...prev,
+      services: prev.services.map(s => 
         s.name === serviceName ? { ...s, ...serviceData } : s
-      );
-      const currentSettings = {
-        name: businessData.businessInfo.name,
-        phone: businessData.businessInfo.phone,
-        email: businessData.businessInfo.email,
-        taxRate: businessData.businessInfo.taxRate,
-        serviceAreas: businessData.businessInfo.serviceAreas,
-        services: newServices,
-        paymentMethods: businessData.paymentMethods
-      };
-      
-      const result = await saveBusinessSettingsToDatabase(currentSettings);
-      if (result.success) {
-        setBusinessData(prev => ({
-          ...prev,
-          services: newServices
-        }));
-        return true;
-      }
-    } catch (error) {
-      console.error('Failed to update service:', error);
-    }
-    return false;
+      )
+    }));
+    return true;
   };
 
-  const addPaymentMethod = async (method) => {
+  const addPaymentMethod = (method) => {
     if (method && !businessData.paymentMethods.includes(method)) {
-      try {
-        const newPaymentMethods = [...businessData.paymentMethods, method];
-        const currentSettings = {
-          name: businessData.businessInfo.name,
-          phone: businessData.businessInfo.phone,
-          email: businessData.businessInfo.email,
-          taxRate: businessData.businessInfo.taxRate,
-          serviceAreas: businessData.businessInfo.serviceAreas,
-          services: businessData.services,
-          paymentMethods: newPaymentMethods
-        };
-        
-        const result = await saveBusinessSettingsToDatabase(currentSettings);
-        if (result.success) {
-          setBusinessData(prev => ({
-            ...prev,
-            paymentMethods: newPaymentMethods
-          }));
-          return true;
-        }
-      } catch (error) {
-        console.error('Failed to add payment method:', error);
-      }
+      setBusinessData(prev => ({
+        ...prev,
+        paymentMethods: [...prev.paymentMethods, method]
+      }));
+      return true;
     }
     return false;
   };
 
-  const removePaymentMethod = async (method) => {
-    try {
-      const newPaymentMethods = businessData.paymentMethods.filter(m => m !== method);
-      const currentSettings = {
-        name: businessData.businessInfo.name,
-        phone: businessData.businessInfo.phone,
-        email: businessData.businessInfo.email,
-        taxRate: businessData.businessInfo.taxRate,
-        serviceAreas: businessData.businessInfo.serviceAreas,
-        services: businessData.services,
-        paymentMethods: newPaymentMethods
-      };
-      
-      const result = await saveBusinessSettingsToDatabase(currentSettings);
-      if (result.success) {
-        setBusinessData(prev => ({
-          ...prev,
-          paymentMethods: newPaymentMethods
-        }));
-        return true;
-      }
-    } catch (error) {
-      console.error('Failed to remove payment method:', error);
-    }
-    return false;
+  const removePaymentMethod = (method) => {
+    setBusinessData(prev => ({
+      ...prev,
+      paymentMethods: prev.paymentMethods.filter(m => m !== method)
+    }));
+    return true;
   };
 
   const addClient = async (clientData) => {

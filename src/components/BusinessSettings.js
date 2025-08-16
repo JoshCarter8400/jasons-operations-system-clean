@@ -25,25 +25,28 @@ function BusinessSettings() {
   const [newPaymentMethod, setNewPaymentMethod] = useState('');
   const [editingService, setEditingService] = useState(null);
 
-  const handleAddServiceArea = (e) => {
+  const handleAddServiceArea = async (e) => {
     e.preventDefault();
     if (newServiceArea.trim()) {
-      const success = addServiceArea(newServiceArea.trim());
+      const success = await addServiceArea(newServiceArea.trim());
       if (success) {
         setNewServiceArea('');
       } else {
-        alert('Service area already exists or invalid name');
+        alert('Service area already exists or failed to save');
       }
     }
   };
 
-  const handleRemoveServiceArea = (areaName) => {
+  const handleRemoveServiceArea = async (areaName) => {
     if (window.confirm(`Are you sure you want to remove service area "${areaName}"?`)) {
-      removeServiceArea(areaName);
+      const success = await removeServiceArea(areaName);
+      if (!success) {
+        alert('Failed to remove service area');
+      }
     }
   };
 
-  const handleAddService = (e) => {
+  const handleAddService = async (e) => {
     e.preventDefault();
     if (newService.name.trim()) {
       const serviceData = {
@@ -52,18 +55,21 @@ function BusinessSettings() {
         defaultRate: parseFloat(newService.defaultRate) || 0
       };
       
-      const success = addService(serviceData);
+      const success = await addService(serviceData);
       if (success) {
         setNewService({ name: '', priceRange: '', defaultRate: '' });
       } else {
-        alert('Service already exists or invalid data');
+        alert('Service already exists or failed to save');
       }
     }
   };
 
-  const handleRemoveService = (serviceName) => {
+  const handleRemoveService = async (serviceName) => {
     if (window.confirm(`Are you sure you want to remove service "${serviceName}"?`)) {
-      removeService(serviceName);
+      const success = await removeService(serviceName);
+      if (!success) {
+        alert('Failed to remove service');
+      }
     }
   };
 
@@ -71,32 +77,39 @@ function BusinessSettings() {
     setEditingService({ ...service });
   };
 
-  const handleUpdateService = (e) => {
+  const handleUpdateService = async (e) => {
     e.preventDefault();
     if (editingService) {
-      updateService(editingService.name, {
+      const success = await updateService(editingService.name, {
         priceRange: editingService.priceRange,
         defaultRate: parseFloat(editingService.defaultRate) || 0
       });
-      setEditingService(null);
-    }
-  };
-
-  const handleAddPaymentMethod = (e) => {
-    e.preventDefault();
-    if (newPaymentMethod.trim()) {
-      const success = addPaymentMethod(newPaymentMethod.trim());
       if (success) {
-        setNewPaymentMethod('');
+        setEditingService(null);
       } else {
-        alert('Payment method already exists');
+        alert('Failed to update service');
       }
     }
   };
 
-  const handleRemovePaymentMethod = (method) => {
+  const handleAddPaymentMethod = async (e) => {
+    e.preventDefault();
+    if (newPaymentMethod.trim()) {
+      const success = await addPaymentMethod(newPaymentMethod.trim());
+      if (success) {
+        setNewPaymentMethod('');
+      } else {
+        alert('Payment method already exists or failed to save');
+      }
+    }
+  };
+
+  const handleRemovePaymentMethod = async (method) => {
     if (window.confirm(`Are you sure you want to remove payment method "${method}"?`)) {
-      removePaymentMethod(method);
+      const success = await removePaymentMethod(method);
+      if (!success) {
+        alert('Failed to remove payment method');
+      }
     }
   };
 
