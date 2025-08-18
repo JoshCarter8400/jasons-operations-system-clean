@@ -35,7 +35,7 @@ export async function testBusinessInfoEditing() {
     
     // Find the business info section on the page
     const businessInfoSection = document.querySelector('h2:contains("Business Information")') || 
-                                document.querySelector('h2') && Array.from(document.querySelectorAll('h2')).find(h2 => h2.textContent.includes('Business Information'));
+                                (document.querySelector('h2') && Array.from(document.querySelectorAll('h2')).find(h2 => h2.textContent.includes('Business Information')));
     
     if (!businessInfoSection) {
       throw new Error('Business Information section not found on page');

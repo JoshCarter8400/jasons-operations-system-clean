@@ -8,7 +8,7 @@ import {
   deleteClient as dbDeleteClient,
   migrateFromLocalStorage
 } from '../utils/database';
-import { insertInvoiceWithNumber, insertInvoiceLineItem, getInvoiceWithLineItems, updateInvoiceTotals, deleteInvoiceLineItems, deleteInvoiceSafely, canDeleteInvoice, getBusinessSettings, updateBusinessSettings, getServiceAreas, addServiceArea as dbAddServiceArea, removeServiceArea as dbRemoveServiceArea, getServiceTypes, addServiceType as dbAddServiceType, updateServiceType as dbUpdateServiceType, removeServiceType as dbRemoveServiceType, getPaymentMethods, addPaymentMethod as dbAddPaymentMethod, removePaymentMethod as dbRemovePaymentMethod, getAllBusinessSettingsData } from '../utils/databaseHelpers';
+import { insertInvoiceWithNumber, insertInvoiceLineItem, getInvoiceWithLineItems, updateInvoiceTotals, deleteInvoiceLineItems, deleteInvoiceSafely, canDeleteInvoice, updateBusinessSettings, addServiceArea as dbAddServiceArea, removeServiceArea as dbRemoveServiceArea, addServiceType as dbAddServiceType, updateServiceType as dbUpdateServiceType, removeServiceType as dbRemoveServiceType, addPaymentMethod as dbAddPaymentMethod, removePaymentMethod as dbRemovePaymentMethod, getAllBusinessSettingsData } from '../utils/databaseHelpers';
 import { 
   createCollectingInvoice, 
   addServiceToInvoice, 

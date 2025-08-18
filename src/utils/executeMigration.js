@@ -7,8 +7,7 @@
 
 import {
   getCurrentBusinessSettingsFromStorage,
-  validateBusinessSettingsForMigration,
-  generateBusinessSettingsMigrationPlan
+  validateBusinessSettingsForMigration
 } from './businessSettingsMigration.js';
 
 import {
@@ -25,7 +24,7 @@ import {
  */
 export async function executeBusinessSettingsMigration() {
   console.log('🚀 Starting Business Settings Migration...');
-  console.log('=' .repeat(50));
+  console.log('='.repeat(50));
   
   const migrationResult = {
     success: false,
@@ -185,7 +184,7 @@ export async function executeBusinessSettingsMigration() {
     migrationResult.success = true;
     
     console.log('\n🎉 Migration completed successfully!');
-    console.log('=' .repeat(50));
+    console.log('='.repeat(50));
     
   } catch (error) {
     console.error('\n❌ Migration failed:', error.message);
@@ -278,9 +277,11 @@ if (typeof window !== 'undefined') {
   console.log('resetMigrationFlag() - Reset for testing');
 }
 
-export default {
+const executeMigrationModule = {
   executeBusinessSettingsMigration,
   isMigrationCompleted,
   getMigrationLog,
   resetMigrationFlag
 };
+
+export default executeMigrationModule;
