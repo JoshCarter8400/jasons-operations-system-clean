@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Production Migration Tool</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #1a1a1a;
+            color: #00ff00;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .success { background: #2d5016; border-left: 4px solid #4caf50; }
+        .error { background: #5d1a1a; border-left: 4px solid #f44336; }
+        .warning { background: #5d4f1a; border-left: 4px solid #ff9800; }
+        .info { background: #1a3d5d; border-left: 4px solid #2196f3; }
+        button {
+            background: #4caf50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 10px 0;
+            border-radius: 5px;
+            cursor: pointer;
+            font-family: monospace;
+        }
+        button:hover { background: #45a049; }
+        button:disabled { background: #666; cursor: not-allowed; }
+        #log {
+            background: #000;
+            padding: 20px;
+            border-radius: 5px;
+            height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Production Migration Tool</h1>
+        <p>This tool will fix the production crash by ensuring business settings exist in the database.</p>
+        
+        <div class="status info">
+            <strong>Instructions:</strong><br>
+            1. This page loads the React app's database functions<br>
+            2. Click "Run Diagnosis" to check the current state<br>
+            3. Click "Fix Production Issues" if problems are found<br>
+            4. Monitor the log for progress and results
+        </div>
+
+        <button id="diagnoseBtn" onclick="runDiagnosis()">🔍 Run Diagnosis</button>
+        <button id="fixBtn" onclick="fixProduction()" disabled>🚀 Fix Production Issues</button>
+        <button onclick="clearLog()">🗑️ Clear Log</button>
+
+        <div id="log"></div>
+    </div>
+
+    <script>
+        // This will be populated by the React app
+        let reactAppFunctions = null;
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('log');
+            const prefix = {
+                'success': '✅',
+                'error': '❌',
+                'warning': '⚠️',
+                'info': 'ℹ️'
+            }[type] || 'ℹ️';
+            
+            logDiv.textContent += `[${timestamp}] ${prefix} ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').textContent = '';
+        }
+
+        async function runDiagnosis() {
+            log('Starting production diagnosis...', 'info');
+            document.getElementById('diagnoseBtn').disabled = true;
+            
+            try {
+                // Wait for React app to load
+                await waitForReactApp();
+                
+                log('React app loaded successfully', 'success');
+                
+                // Check database connection
+                const dbCheck = await checkDatabaseConnection();
+                if (!dbCheck) {
+                    log('Database connection failed - check environment variables', 'error');
+                    return;
+                }
+                
+                // Check business settings
+                const settingsCheck = await checkBusinessSettings();
+                if (settingsCheck) {
+                    log('Business settings exist - no migration needed', 'success');
+                    log('Production should be working correctly', 'success');
+                } else {
+                    log('Business settings missing - migration needed', 'warning');
+                    document.getElementById('fixBtn').disabled = false;
+                }
+                
+            } catch (error) {
+                log(`Diagnosis failed: ${error.message}`, 'error');
+            } finally {
+                document.getElementById('diagnoseBtn').disabled = false;
+            }
+        }
+
+        async function fixProduction() {
+            log('Starting production fix...', 'info');
+            document.getElementById('fixBtn').disabled = true;
+            
+            try {
+                // Run the migration
+                log('Running business settings migration...', 'info');
+                const migrationResult = await reactAppFunctions.executeBusinessSettingsMigration();
+                
+                if (migrationResult.success) {
+                    log('Migration completed successfully!', 'success');
+                    log('Verifying final state...', 'info');
+                    
+                    const finalCheck = await checkBusinessSettings();
+                    if (finalCheck) {
+                        log('SUCCESS: Production fix completed!', 'success');
+                        log('The app should now load without crashes', 'success');
+                    } else {
+                        log('Warning: Issues may remain', 'warning');
+                    }
+                } else {
+                    log('Migration failed:', 'error');
+                    migrationResult.errors.forEach(err => {
+                        log(`  ${err.error}`, 'error');
+                    });
+                }
+                
+            } catch (error) {
+                log(`Fix failed: ${error.message}`, 'error');
+            } finally {
+                document.getElementById('fixBtn').disabled = false;
+            }
+        }
+
+        async function waitForReactApp() {
+            return new Promise((resolve, reject) => {
+                let attempts = 0;
+                const maxAttempts = 30; // 15 seconds
+                
+                const checkForApp = () => {
+                    attempts++;
+                    
+                    // Check if window has the migration functions
+                    if (window.executeBusinessSettingsMigration) {
+                        reactAppFunctions = {
+                            executeBusinessSettingsMigration: window.executeBusinessSettingsMigration,
+                            isMigrationCompleted: window.isMigrationCompleted,
+                            getAllBusinessSettingsData: window.getAllBusinessSettingsData
+                        };
+                        resolve();
+                        return;
+                    }
+                    
+                    if (attempts >= maxAttempts) {
+                        reject(new Error('React app failed to load migration functions'));
+                        return;
+                    }
+                    
+                    setTimeout(checkForApp, 500);
+                };
+                
+                checkForApp();
+            });
+        }
+
+        async function checkDatabaseConnection() {
+            try {
+                // This function should be available from the React app
+                if (window.testDatabaseConnection) {
+                    const result = await window.testDatabaseConnection();
+                    if (result.success) {
+                        log(`Database connected: ${result.url}`, 'success');
+                        return true;
+                    } else {
+                        log(`Database connection failed: ${result.error}`, 'error');
+                        return false;
+                    }
+                } else {
+                    log('Database test function not available', 'warning');
+                    return true; // Assume it's working
+                }
+            } catch (error) {
+                log(`Database check failed: ${error.message}`, 'error');
+                return false;
+            }
+        }
+
+        async function checkBusinessSettings() {
+            try {
+                if (window.getAllBusinessSettingsData) {
+                    const settings = await window.getAllBusinessSettingsData();
+                    
+                    log(`Business Info: ${settings.businessInfo ? 'EXISTS' : 'MISSING'}`, 
+                         settings.businessInfo ? 'success' : 'error');
+                    log(`Service Areas: ${settings.serviceAreas?.length || 0} items`, 'info');
+                    log(`Services: ${settings.services?.length || 0} items`, 'info');
+                    log(`Payment Methods: ${settings.paymentMethods?.length || 0} items`, 'info');
+                    
+                    return settings.businessInfo && 
+                           settings.serviceAreas?.length > 0 && 
+                           settings.services?.length > 0 && 
+                           settings.paymentMethods?.length > 0;
+                } else {
+                    log('Business settings check function not available', 'warning');
+                    return false;
+                }
+            } catch (error) {
+                log(`Settings check failed: ${error.message}`, 'error');
+                return false;
+            }
+        }
+
+        // Initialize
+        log('Migration tool loaded. Click "Run Diagnosis" to start.', 'info');
+        log('Make sure to open this page in the same domain as the React app.', 'warning');
+        
+        // Auto-run diagnosis after 2 seconds if React app is loaded
+        setTimeout(() => {
+            if (window.executeBusinessSettingsMigration) {
+                log('React app detected, running auto-diagnosis...', 'info');
+                runDiagnosis();
+            }
+        }, 2000);
+    </script>
+</body>
+</html>

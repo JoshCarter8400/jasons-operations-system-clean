@@ -110,12 +110,12 @@ function Dashboard() {
         <div className="card-header">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="card-title">{businessInfo.name}</h1>
+              <h1 className="card-title">{businessInfo?.name || 'Loading Business Information...'}</h1>
               <p className="text-gray-600">Dashboard Overview</p>
             </div>
             <div className="text-right text-sm text-gray-600">
-              <p>📞 {businessInfo.phone}</p>
-              <p>📧 {businessInfo.email}</p>
+              <p>📞 {businessInfo?.phone || 'Loading...'}</p>
+              <p>📧 {businessInfo?.email || 'Loading...'}</p>
             </div>
           </div>
         </div>

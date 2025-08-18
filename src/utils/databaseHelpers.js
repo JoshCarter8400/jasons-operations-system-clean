@@ -1809,3 +1809,18 @@ export async function getAllBusinessSettingsData() {
     throw error;
   }
 }
+
+// Make functions available globally for production migration tool
+if (typeof window !== 'undefined') {
+  window.getAllBusinessSettingsData = getAllBusinessSettingsData;
+  window.testDatabaseConnection = async () => {
+    try {
+      const { testConnection } = await import('./database.js');
+      return await testConnection();
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  };
+  
+  console.log('🔧 Database helper functions available globally');
+}

@@ -9,6 +9,8 @@ import {
   migrateFromLocalStorage
 } from '../utils/database';
 import { insertInvoiceWithNumber, insertInvoiceLineItem, getInvoiceWithLineItems, updateInvoiceTotals, deleteInvoiceLineItems, deleteInvoiceSafely, canDeleteInvoice, updateBusinessSettings, addServiceArea as dbAddServiceArea, removeServiceArea as dbRemoveServiceArea, addServiceType as dbAddServiceType, updateServiceType as dbUpdateServiceType, removeServiceType as dbRemoveServiceType, addPaymentMethod as dbAddPaymentMethod, removePaymentMethod as dbRemovePaymentMethod, getAllBusinessSettingsData } from '../utils/databaseHelpers';
+// Import to ensure global functions are registered
+import '../utils/executeMigration';
 import { 
   createCollectingInvoice, 
   addServiceToInvoice, 
@@ -1100,10 +1102,10 @@ export const DataProvider = ({ children }) => {
 
   const value = {
     businessData,
-    businessInfo: businessSettings.businessInfo,
-    services: businessSettings.services,
-    serviceAreas: businessSettings.serviceAreas,
-    paymentMethods: businessSettings.paymentMethods,
+    businessInfo: businessSettings.businessInfo || businessData.businessInfo,
+    services: businessSettings.services.length > 0 ? businessSettings.services : businessData.services,
+    serviceAreas: businessSettings.serviceAreas.length > 0 ? businessSettings.serviceAreas : businessData.businessInfo?.serviceAreas || [],
+    paymentMethods: businessSettings.paymentMethods.length > 0 ? businessSettings.paymentMethods : businessData.paymentMethods,
     businessSettingsLoading,
     businessSettingsLoaded,
     clients: clients,

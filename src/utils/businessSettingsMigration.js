@@ -8,7 +8,7 @@
  * The actual migration should be executed manually after review.
  */
 
-import { jasonBusinessData } from '../data/jasonData';
+import { jasonBusinessData } from '../data/jasonData.js';
 
 /**
  * Reads current business settings from localStorage
