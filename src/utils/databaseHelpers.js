@@ -1299,3 +1299,513 @@ export async function canDeleteInvoice(invoiceId) {
     };
   }
 }
+
+// ============================================================================
+// BUSINESS SETTINGS CRUD OPERATIONS
+// ============================================================================
+
+/**
+ * Get business settings from database
+ * @returns {Promise<Object>} Business settings object
+ */
+export async function getBusinessSettings() {
+  try {
+    // Validate configuration
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    // Create database client
+    const db = createLibSQLClient(config);
+
+    // Get business settings
+    const result = await db.execute(`
+      SELECT id, name, phone, email, address, tax_rate, created_at, updated_at
+      FROM business_settings
+      WHERE id = 1
+    `);
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const row = result.rows[0];
+    return {
+      name: row.name,
+      phone: row.phone,
+      email: row.email,
+      address: row.address || '',
+      taxRate: row.tax_rate,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+
+  } catch (error) {
+    console.error('❌ Error getting business settings:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update business settings in database
+ * @param {Object} settings - Business settings to update
+ * @returns {Promise<Object>} Updated business settings
+ */
+export async function updateBusinessSettings(settings) {
+  try {
+    // Validate configuration
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    // Create database client
+    const db = createLibSQLClient(config);
+
+    // Update business settings
+    await db.execute(`
+      INSERT INTO business_settings (id, name, phone, email, address, tax_rate)
+      VALUES (1, ?, ?, ?, ?, ?)
+      ON CONFLICT (id) DO UPDATE SET
+        name = excluded.name,
+        phone = excluded.phone,
+        email = excluded.email,
+        address = excluded.address,
+        tax_rate = excluded.tax_rate,
+        updated_at = CURRENT_TIMESTAMP
+    `, [settings.name, settings.phone, settings.email, settings.address || '', settings.taxRate || 0.0]);
+
+    // Return updated settings
+    return await getBusinessSettings();
+
+  } catch (error) {
+    console.error('❌ Error updating business settings:', error);
+    throw error;
+  }
+}
+
+// ============================================================================
+// SERVICE AREAS CRUD OPERATIONS
+// ============================================================================
+
+/**
+ * Get all service areas from database
+ * @returns {Promise<Array<string>>} Array of service area names
+ */
+export async function getServiceAreas() {
+  try {
+    // Validate configuration
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    // Create database client
+    const db = createLibSQLClient(config);
+
+    // Get active service areas
+    const result = await db.execute(`
+      SELECT area_name
+      FROM service_areas
+      WHERE active = true
+      ORDER BY area_name
+    `);
+
+    return result.rows.map(row => row.area_name);
+
+  } catch (error) {
+    console.error('❌ Error getting service areas:', error);
+    throw error;
+  }
+}
+
+/**
+ * Add a new service area
+ * @param {string} areaName - Name of the service area
+ * @returns {Promise<boolean>} Success status
+ */
+export async function addServiceArea(areaName) {
+  try {
+    // Validate configuration
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    // Validate input
+    if (!areaName || typeof areaName !== 'string' || areaName.trim() === '') {
+      throw new Error('Service area name is required');
+    }
+
+    // Create database client
+    const db = createLibSQLClient(config);
+
+    // Insert new service area (ON CONFLICT will handle duplicates)
+    await db.execute(`
+      INSERT INTO service_areas (area_name, active)
+      VALUES (?, true)
+      ON CONFLICT (area_name) DO UPDATE SET
+        active = true,
+        created_at = COALESCE(service_areas.created_at, CURRENT_TIMESTAMP)
+    `, [areaName.trim()]);
+
+    return true;
+
+  } catch (error) {
+    console.error('❌ Error adding service area:', error);
+    throw error;
+  }
+}
+
+/**
+ * Remove a service area (mark as inactive)
+ * @param {string} areaName - Name of the service area to remove
+ * @returns {Promise<boolean>} Success status
+ */
+export async function removeServiceArea(areaName) {
+  try {
+    // Validate configuration
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    // Validate input
+    if (!areaName || typeof areaName !== 'string') {
+      throw new Error('Service area name is required');
+    }
+
+    // Create database client
+    const db = createLibSQLClient(config);
+
+    // Mark service area as inactive (soft delete)
+    const result = await db.execute(`
+      UPDATE service_areas
+      SET active = false
+      WHERE area_name = ?
+    `, [areaName]);
+
+    return result.rowsAffected > 0;
+
+  } catch (error) {
+    console.error('❌ Error removing service area:', error);
+    throw error;
+  }
+}
+
+// ============================================================================
+// SERVICE TYPES CRUD OPERATIONS
+// ============================================================================
+
+/**
+ * Get all service types from database
+ * @returns {Promise<Array<Object>>} Array of service type objects
+ */
+export async function getServiceTypes() {
+  try {
+    // Validate configuration
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    // Create database client
+    const db = createLibSQLClient(config);
+
+    // Get active service types
+    const result = await db.execute(`
+      SELECT name, price_range, default_rate, created_at
+      FROM service_types
+      WHERE active = true
+      ORDER BY name
+    `);
+
+    return result.rows.map(row => ({
+      name: row.name,
+      priceRange: row.price_range,
+      defaultRate: row.default_rate,
+      createdAt: row.created_at
+    }));
+
+  } catch (error) {
+    console.error('❌ Error getting service types:', error);
+    throw error;
+  }
+}
+
+/**
+ * Add a new service type
+ * @param {Object} service - Service object with name, priceRange, defaultRate
+ * @returns {Promise<boolean>} Success status
+ */
+export async function addServiceType(service) {
+  try {
+    // Validate configuration
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    // Validate input
+    if (!service || !service.name || typeof service.name !== 'string') {
+      throw new Error('Service name is required');
+    }
+    if (!service.defaultRate || service.defaultRate <= 0) {
+      throw new Error('Valid default rate is required');
+    }
+
+    // Create database client
+    const db = createLibSQLClient(config);
+
+    // Insert new service type
+    await db.execute(`
+      INSERT INTO service_types (name, price_range, default_rate, active)
+      VALUES (?, ?, ?, true)
+      ON CONFLICT (name) DO UPDATE SET
+        price_range = excluded.price_range,
+        default_rate = excluded.default_rate,
+        active = true,
+        created_at = COALESCE(service_types.created_at, CURRENT_TIMESTAMP)
+    `, [
+      service.name.trim(),
+      service.priceRange || '$0-$100',
+      service.defaultRate
+    ]);
+
+    return true;
+
+  } catch (error) {
+    console.error('❌ Error adding service type:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update an existing service type
+ * @param {string} name - Current service name
+ * @param {Object} updates - Updates to apply
+ * @returns {Promise<boolean>} Success status
+ */
+export async function updateServiceType(name, updates) {
+  try {
+    // Validate configuration
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    // Validate input
+    if (!name || typeof name !== 'string') {
+      throw new Error('Service name is required');
+    }
+    if (!updates || typeof updates !== 'object') {
+      throw new Error('Updates object is required');
+    }
+
+    // Create database client
+    const db = createLibSQLClient(config);
+
+    // Build update query dynamically
+    const updateFields = [];
+    const params = [];
+
+    if (updates.priceRange !== undefined) {
+      updateFields.push('price_range = ?');
+      params.push(updates.priceRange);
+    }
+    if (updates.defaultRate !== undefined) {
+      updateFields.push('default_rate = ?');
+      params.push(updates.defaultRate);
+    }
+    if (updates.name !== undefined && updates.name !== name) {
+      updateFields.push('name = ?');
+      params.push(updates.name);
+    }
+
+    if (updateFields.length === 0) {
+      return false; // No updates to apply
+    }
+
+    params.push(name);
+
+    // Update service type
+    const result = await db.execute(`
+      UPDATE service_types
+      SET ${updateFields.join(', ')}
+      WHERE name = ? AND active = true
+    `, params);
+
+    return result.rowsAffected > 0;
+
+  } catch (error) {
+    console.error('❌ Error updating service type:', error);
+    throw error;
+  }
+}
+
+/**
+ * Remove a service type (mark as inactive)
+ * @param {string} name - Name of the service type to remove
+ * @returns {Promise<boolean>} Success status
+ */
+export async function removeServiceType(name) {
+  try {
+    // Validate configuration
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    // Validate input
+    if (!name || typeof name !== 'string') {
+      throw new Error('Service name is required');
+    }
+
+    // Create database client
+    const db = createLibSQLClient(config);
+
+    // Mark service type as inactive (soft delete)
+    const result = await db.execute(`
+      UPDATE service_types
+      SET active = false
+      WHERE name = ?
+    `, [name]);
+
+    return result.rowsAffected > 0;
+
+  } catch (error) {
+    console.error('❌ Error removing service type:', error);
+    throw error;
+  }
+}
+
+// ============================================================================
+// PAYMENT METHODS CRUD OPERATIONS
+// ============================================================================
+
+/**
+ * Get all payment methods from database
+ * @returns {Promise<Array<string>>} Array of payment method names
+ */
+export async function getPaymentMethods() {
+  try {
+    // Validate configuration
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    // Create database client
+    const db = createLibSQLClient(config);
+
+    // Get active payment methods
+    const result = await db.execute(`
+      SELECT method_name
+      FROM payment_methods
+      WHERE active = true
+      ORDER BY method_name
+    `);
+
+    return result.rows.map(row => row.method_name);
+
+  } catch (error) {
+    console.error('❌ Error getting payment methods:', error);
+    throw error;
+  }
+}
+
+/**
+ * Add a new payment method
+ * @param {string} method - Name of the payment method
+ * @returns {Promise<boolean>} Success status
+ */
+export async function addPaymentMethod(method) {
+  try {
+    // Validate configuration
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    // Validate input
+    if (!method || typeof method !== 'string' || method.trim() === '') {
+      throw new Error('Payment method name is required');
+    }
+
+    // Create database client
+    const db = createLibSQLClient(config);
+
+    // Insert new payment method (ON CONFLICT will handle duplicates)
+    await db.execute(`
+      INSERT INTO payment_methods (method_name, active)
+      VALUES (?, true)
+      ON CONFLICT (method_name) DO UPDATE SET
+        active = true,
+        created_at = COALESCE(payment_methods.created_at, CURRENT_TIMESTAMP)
+    `, [method.trim()]);
+
+    return true;
+
+  } catch (error) {
+    console.error('❌ Error adding payment method:', error);
+    throw error;
+  }
+}
+
+/**
+ * Remove a payment method (mark as inactive)
+ * @param {string} method - Name of the payment method to remove
+ * @returns {Promise<boolean>} Success status
+ */
+export async function removePaymentMethod(method) {
+  try {
+    // Validate configuration
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    // Validate input
+    if (!method || typeof method !== 'string') {
+      throw new Error('Payment method name is required');
+    }
+
+    // Create database client
+    const db = createLibSQLClient(config);
+
+    // Mark payment method as inactive (soft delete)
+    const result = await db.execute(`
+      UPDATE payment_methods
+      SET active = false
+      WHERE method_name = ?
+    `, [method]);
+
+    return result.rowsAffected > 0;
+
+  } catch (error) {
+    console.error('❌ Error removing payment method:', error);
+    throw error;
+  }
+}
+
+// ============================================================================
+// COMBINED BUSINESS SETTINGS OPERATIONS
+// ============================================================================
+
+/**
+ * Get all business settings data (business info + areas + services + payment methods)
+ * @returns {Promise<Object>} Complete business settings object
+ */
+export async function getAllBusinessSettingsData() {
+  try {
+    const [businessInfo, serviceAreas, services, paymentMethods] = await Promise.all([
+      getBusinessSettings(),
+      getServiceAreas(),
+      getServiceTypes(),
+      getPaymentMethods()
+    ]);
+
+    return {
+      businessInfo: businessInfo ? {
+        ...businessInfo,
+        serviceAreas // Add service areas to business info for compatibility
+      } : null,
+      services,
+      paymentMethods,
+      serviceAreas
+    };
+
+  } catch (error) {
+    console.error('❌ Error getting all business settings data:', error);
+    throw error;
+  }
+}

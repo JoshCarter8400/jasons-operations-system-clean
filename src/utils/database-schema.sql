@@ -8,6 +8,7 @@ CREATE TABLE business_settings (
     name TEXT NOT NULL,
     phone TEXT NOT NULL,
     email TEXT NOT NULL,
+    address TEXT DEFAULT '',
     tax_rate REAL NOT NULL DEFAULT 0.075,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP

@@ -10,6 +10,13 @@ import Invoicing from './components/Invoicing';
 import RouteOptimization from './components/RouteOptimization';
 import DailySchedule from './components/DailySchedule';
 import BusinessSettings from './components/BusinessSettings';
+import DatabaseFunctionTester from './components/DatabaseFunctionTester';
+// Import test utilities for development
+import './utils/testServiceInBrowser.js';
+import './utils/addAddressColumn.js';
+import './utils/testBusinessInfoEditing.js';
+import './utils/urgentAddressColumnFix.js';
+import './utils/testAddressFieldComplete.js';
 
 
 function Navigation() {
@@ -77,6 +84,7 @@ function App() {
               <Route path="/invoicing/*" element={<Invoicing />} />
               <Route path="/routes" element={<RouteOptimization />} />
               <Route path="/settings" element={<BusinessSettings />} />
+              <Route path="/test-db" element={<DatabaseFunctionTester />} />
             </Routes>
           </main>
         </div>

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add Address Column - Database Fix</title>
+    <script src="https://unpkg.com/@libsql/client-wasm/lib/index.js"></script>
+</head>
+<body>
+    <h1>🚨 URGENT: Add Address Column to Business Settings</h1>
+    <div id="output"></div>
+    
+    <script>
+        // This script will add the address column directly
+        async function addAddressColumn() {
+            const output = document.getElementById('output');
+            
+            function log(message) {
+                output.innerHTML += '<p>' + message + '</p>';
+                console.log(message);
+            }
+            
+            try {
+                log('🔄 Starting address column addition...');
+                
+                // You need to replace these with your actual Turso credentials
+                const DATABASE_URL = prompt('Enter TURSO_DATABASE_URL:');
+                const AUTH_TOKEN = prompt('Enter TURSO_AUTH_TOKEN:');
+                
+                if (!DATABASE_URL || !AUTH_TOKEN) {
+                    throw new Error('Database credentials required');
+                }
+                
+                const { createClient } = LibSQL;
+                const db = createClient({
+                    url: DATABASE_URL,
+                    authToken: AUTH_TOKEN
+                });
+                
+                // Check current structure
+                log('📋 Checking current table structure...');
+                const tableInfo = await db.execute('PRAGMA table_info(business_settings)');
+                const columns = tableInfo.rows.map(row => row.name);
+                log('Current columns: ' + columns.join(', '));
+                
+                if (columns.includes('address')) {
+                    log('✅ Address column already exists!');
+                    return;
+                }
+                
+                // Add address column
+                log('🔧 Adding address column...');
+                await db.execute(`
+                    ALTER TABLE business_settings 
+                    ADD COLUMN address TEXT DEFAULT ''
+                `);
+                
+                log('✅ Address column added successfully!');
+                
+                // Verify
+                const newTableInfo = await db.execute('PRAGMA table_info(business_settings)');
+                const newColumns = newTableInfo.rows.map(row => row.name);
+                log('Updated columns: ' + newColumns.join(', '));
+                
+                if (newColumns.includes('address')) {
+                    log('🎉 SUCCESS: Address column is now available!');
+                } else {
+                    log('❌ ERROR: Address column not found after addition');
+                }
+                
+            } catch (error) {
+                log('❌ ERROR: ' + error.message);
+                console.error(error);
+            }
+        }
+        
+        // Auto-run when page loads
+        document.addEventListener('DOMContentLoaded', addAddressColumn);
+    </script>
+</body>
+</html>
