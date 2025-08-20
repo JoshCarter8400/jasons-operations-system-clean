@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Routes, Route, Link, useNavigate, useSearchParams, useParams } from 'react-router-dom';
+import { Routes, Route, Link, useNavigate, useSearchParams, useParams, useLocation } from 'react-router-dom';
 import { useData } from '../contexts/DataContext';
 import CollectingInvoiceEditor from './CollectingInvoiceEditor';
 import { InvoiceStatusBadge } from './InvoiceStatusBadge';
@@ -19,6 +19,7 @@ function InvoiceList() {
   const [collectingInvoices, setCollectingInvoices] = useState([]);
   const [databaseInvoices, setDatabaseInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('collecting'); // 'collecting', 'sent', 'paid'
   const [sending, setSending] = useState({});
@@ -27,27 +28,80 @@ function InvoiceList() {
   const [markingPaid, setMarkingPaid] = useState({});
   
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
-    loadAllInvoices();
+    // Conservative fix: Initial load with better timing
+    const initialLoad = async () => {
+      try {
+        // Set loading but keep any existing data visible during load
+        setLoading(true);
+        await loadAllInvoices(false); // false = don't force refresh on initial load
+      } catch (error) {
+        console.error('Initial invoice load failed:', error);
+      }
+    };
+    
+    initialLoad();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const loadAllInvoices = async () => {
-    try {
-      setLoading(true);
+  // Check if we need to refresh after navigation from manual invoice creation
+  useEffect(() => {
+    if (location.state?.refreshInvoices) {
+      console.log('🔄 Refreshing invoices after manual creation...');
+      loadAllInvoices(true); // Force refresh
+      setActiveTab('collecting'); // Switch to collecting tab to show new invoice
       
+      // Clear the state to prevent repeated refreshes
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Refresh invoices when returning from other routes
+  useEffect(() => {
+    const handleFocus = () => {
+      console.log('🔄 Invoice list regained focus, refreshing data...');
+      loadAllInvoices(true); // Force refresh when window regains focus
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadAllInvoices = async (forceRefresh = false) => {
+    try {
+      // Conservative fix: Use different loading states for initial load vs refresh
+      if (collectingInvoices.length === 0 && databaseInvoices.length === 0) {
+        setLoading(true); // Show full loading for initial load
+      } else {
+        setRefreshing(true); // Show refresh indicator for subsequent loads
+      }
+      
+      console.log('📋 UI: Loading all invoices, forceRefresh:', forceRefresh);
       const [collecting, database] = await Promise.all([
-        getAllCollectingInvoices(),
+        getAllCollectingInvoices(forceRefresh),
         getAllDatabaseInvoices()
       ]);
       
+      console.log('📊 UI: Invoices loaded:', {
+        collecting: collecting.length,
+        database: database.length
+      });
       
-      setCollectingInvoices(collecting);
-      setDatabaseInvoices(database);
+      // Conservative fix: Only update state if we have valid data
+      // This prevents temporary disappearing of collecting invoices during refresh
+      if (collecting !== null && collecting !== undefined) {
+        setCollectingInvoices(collecting);
+      }
+      if (database !== null && database !== undefined) {
+        setDatabaseInvoices(database);
+      }
     } catch (error) {
       console.error('Failed to load invoices:', error);
+      // On error, don't clear existing data - keep what we have
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -61,19 +115,84 @@ function InvoiceList() {
 
     try {
       setSending(prev => ({ ...prev, [invoice.id]: true }));
-      await sendCollectingInvoiceToClient(invoice.id);
       
-      // Immediately refresh all invoice data
+      console.log('🚀 UI: Sending collecting invoice:', { id: invoice.id, client: invoice.client_name });
+      const result = await sendCollectingInvoiceToClient(invoice.id);
+      console.log('✅ UI: Send completed, result:', result.uiUpdateData ? 'success' : 'no update data');
+      
+      // Immediately remove from collecting invoices UI (optimistic update)
+      console.log('🔄 UI: Optimistically removing invoice from collecting list');
+      setCollectingInvoices(prev => {
+        const filtered = prev.filter(inv => inv.id !== invoice.id);
+        console.log('📋 UI: Collecting invoices updated:', { before: prev.length, after: filtered.length });
+        return filtered;
+      });
+      
+      // Show immediate success feedback
+      if (result.uiUpdateData) {
+        const { sentInvoice, clientName } = result.uiUpdateData;
+        
+        console.log('✅ UI: Adding sent invoice to database invoices list');
+        // Add to database invoices for Sent tab
+        setDatabaseInvoices(prev => [{
+          id: sentInvoice.id,
+          invoice_number: sentInvoice.invoice_number,
+          clientId: sentInvoice.client_id,
+          clientName: clientName,
+          date: sentInvoice.date,
+          dueDate: sentInvoice.due_date,
+          status: 'Sent',
+          services: sentInvoice.line_items || [],
+          subtotal: sentInvoice.subtotal,
+          tax: sentInvoice.tax,
+          total: sentInvoice.total,
+          notes: sentInvoice.notes,
+          sentDate: sentInvoice.sent_date,
+          paidDate: sentInvoice.paid_date,
+          paymentMethod: sentInvoice.payment_method
+        }, ...prev]);
+        
+        console.log('📝 UI: Switching to Sent tab to show result');
+        // Switch to Sent tab to show the result
+        setActiveTab('sent');
+        
+        alert(`✅ Success!\n\nInvoice #${sentInvoice.invoice_number} sent to ${clientName}!\n\nThe invoice has been moved to the Sent tab.`);
+      }
+      
+      console.log('🔄 UI: Force refreshing data from backend with cache clear');
+      // Force refresh data from backend with cache clear to ensure consistency
       const [collecting, database] = await Promise.all([
-        getAllCollectingInvoices(),
+        getAllCollectingInvoices(true), // Force refresh with cache clear
         getAllDatabaseInvoices()
       ]);
       
+      console.log('📊 UI: Backend refresh completed:', {
+        collecting: collecting.length,
+        database: database.length
+      });
+      
       setCollectingInvoices(collecting);
       setDatabaseInvoices(database);
+      
+      // Additional safeguard: Force a final refresh after a short delay
+      setTimeout(async () => {
+        console.log('⏰ UI: Final safeguard refresh after 1 second');
+        try {
+          const finalCollecting = await getAllCollectingInvoices(true);
+          console.log('✅ UI: Final collecting count:', finalCollecting.length);
+          setCollectingInvoices(finalCollecting);
+        } catch (error) {
+          console.error('❌ UI: Final safeguard refresh failed:', error);
+        }
+      }, 1000);
+      
     } catch (error) {
       console.error('Failed to send invoice:', error);
       alert('Failed to send invoice. Please try again.');
+      
+      // Revert optimistic update on error
+      console.log('❌ UI: Error occurred, reverting optimistic update');
+      await loadAllInvoices();
     } finally {
       setSending(prev => ({ ...prev, [invoice.id]: false }));
     }
@@ -214,16 +333,26 @@ function InvoiceList() {
                 + Manual Invoice
               </Link>
               <button 
-                onClick={loadAllInvoices}
+                onClick={() => loadAllInvoices(true)}
+                disabled={refreshing}
                 className="btn btn-outline"
+                title="Refresh all invoice data from database"
               >
-                🔄 Refresh
+                {refreshing ? '⏳ Refreshing...' : '🔄 Refresh'}
               </button>
             </div>
           </div>
         </div>
         
         <div className="p-6">
+          {/* Refreshing indicator */}
+          {refreshing && (
+            <div className="mb-4 p-3 bg-blue-50 border-l-4 border-blue-400 rounded flex items-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-3"></div>
+              <span className="text-blue-700 text-sm">Refreshing invoice data...</span>
+            </div>
+          )}
+          
           {/* Tab Navigation */}
           <div className="mb-6">
             <div className="flex gap-2 flex-wrap">
@@ -562,11 +691,21 @@ function CreateInvoice() {
         total
       });
       
-      alert(`Invoice ${newInvoice.invoice_number} created successfully!`);
-      navigate('/invoicing');
+      console.log('✅ Manual invoice created successfully:', newInvoice.invoice_number);
+      alert(`✅ Success!\n\nInvoice #${newInvoice.invoice_number || newInvoice.id} created successfully!\n\nThe invoice is now in your Collecting tab and ready for editing.`);
+      
+      // Navigate to invoicing with collecting tab active to show the new invoice
+      // Use replace to ensure the invoice list refreshes on navigation
+      navigate('/invoicing', { replace: true, state: { refreshInvoices: true } });
     } catch (error) {
-      console.error('Failed to create invoice:', error);
-      alert('Failed to create invoice. Please try again.');
+      console.error('❌ Failed to create invoice:', error);
+      
+      // Handle duplicate collecting invoice error specifically
+      if (error.message && error.message.includes('they already have a collecting invoice')) {
+        alert(`⚠️ Cannot Create Invoice\n\n${error.message}`);
+      } else {
+        alert('❌ Failed to create invoice. Please try again.');
+      }
     }
   };
 

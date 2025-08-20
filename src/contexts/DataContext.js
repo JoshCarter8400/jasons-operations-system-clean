@@ -376,6 +376,34 @@ export const DataProvider = ({ children }) => {
 
   const addInvoice = async (invoiceData) => {
     try {
+      console.log('🔄 DEBUG: Manual invoice creation started for client:', invoiceData.clientId);
+      
+      // DUPLICATE PREVENTION: Check if customer already has a collecting invoice WITH LINE ITEMS
+      // This aligns with UI logic which only shows invoices with line items
+      const existingCollecting = await getCollectingInvoiceForClient(invoiceData.clientId);
+      if (existingCollecting) {
+        // Get full invoice details including line items
+        const fullInvoice = await getInvoiceWithLineItems(existingCollecting.id);
+        
+        // Only prevent creation if the existing invoice has line items (matches UI filtering)
+        if (fullInvoice && fullInvoice.line_items && fullInvoice.line_items.length > 0) {
+          const client = clients.find(c => c.id === invoiceData.clientId);
+          const clientName = client ? client.name : 'Unknown Client';
+          throw new Error(
+            `Please don't create invoice for ${clientName} - they already have a collecting invoice with ${fullInvoice.line_items.length} service(s). Please add the service to the existing collecting invoice.`
+          );
+        } else {
+          console.log('✅ DEBUG: Found empty collecting invoice, allowing creation (will replace empty invoice)');
+          // If there's an empty collecting invoice, we can safely delete it and create a new one
+          if (fullInvoice && (!fullInvoice.line_items || fullInvoice.line_items.length === 0)) {
+            console.log('🗑️ DEBUG: Deleting empty collecting invoice to replace with new manual invoice');
+            await deleteInvoiceSafely(existingCollecting.id);
+          }
+        }
+      }
+      
+      console.log('✅ DEBUG: No existing collecting invoice found, proceeding with creation');
+      
       // Create invoice with proper numbering in database
       const dbInvoice = await insertInvoiceWithNumber({
         client_id: invoiceData.clientId,
@@ -387,9 +415,11 @@ export const DataProvider = ({ children }) => {
         tax: invoiceData.tax,
         total: invoiceData.total,
         notes: invoiceData.notes || '',
-        sent_date: new Date().toISOString().split('T')[0],
+        sent_date: null, // Don't set sent_date for collecting invoices
         paid_date: null
       });
+
+      console.log('📋 DEBUG: Invoice created in database with ID:', dbInvoice.id);
 
       // Add line items to the database invoice
       if (invoiceData.services && invoiceData.services.length > 0) {
@@ -401,11 +431,23 @@ export const DataProvider = ({ children }) => {
             amount: service.amount
           });
         }
+        console.log('📝 DEBUG: Added', invoiceData.services.length, 'line items to invoice');
       }
 
-      return dbInvoice;
+      // Get the complete invoice with line items for caching
+      const completeInvoice = await getInvoiceWithLineItems(dbInvoice.id);
+      
+      // Update the collecting invoices cache so it appears in the UI immediately
+      console.log('💾 DEBUG: Caching new manual invoice in collecting invoices');
+      setCollectingInvoices(prev => ({ 
+        ...prev, 
+        [invoiceData.clientId]: completeInvoice 
+      }));
+
+      console.log('✅ DEBUG: Manual invoice creation completed successfully');
+      return completeInvoice;
     } catch (error) {
-      console.error('Failed to create invoice:', error);
+      console.error('❌ Failed to create invoice:', error);
       throw error;
     }
   };
@@ -597,20 +639,25 @@ export const DataProvider = ({ children }) => {
    * Gets or creates a collecting invoice for a client
    * This is the core of Jason's workflow - services accumulate here
    */
-  const getCurrentCollectingInvoice = async (clientId) => {
+  const getCurrentCollectingInvoice = async (clientId, bypassCache = false) => {
     try {
       setCollectingInvoicesLoading(prev => ({ ...prev, [clientId]: true }));
       
-      // Check cache first
-      if (collectingInvoices[clientId]) {
+      console.log('🔍 DEBUG: getCurrentCollectingInvoice called for client:', clientId, 'bypassCache:', bypassCache);
+      
+      // Check cache first (unless bypassing)
+      if (!bypassCache && collectingInvoices[clientId]) {
+        console.log('📦 DEBUG: Using cached collecting invoice for client:', clientId);
         setCollectingInvoicesLoading(prev => ({ ...prev, [clientId]: false }));
         return collectingInvoices[clientId];
       }
 
+      console.log('🔍 DEBUG: Fetching collecting invoice from database for client:', clientId);
       // Try to get existing collecting invoice
       let invoice = await getCollectingInvoiceForClient(clientId);
       
       if (!invoice) {
+        console.log('🆕 DEBUG: No collecting invoice found, creating new one for client:', clientId);
         // Create new collecting invoice
         const client = clients.find(c => c.id === clientId);
         if (!client) {
@@ -619,10 +666,12 @@ export const DataProvider = ({ children }) => {
         
         invoice = await createCollectingInvoice(clientId, client);
       } else {
+        console.log('📋 DEBUG: Found collecting invoice, getting full details for client:', clientId);
         // Get full invoice with line items
         invoice = await getInvoiceWithLineItems(invoice.id);
       }
 
+      console.log('💾 DEBUG: Caching collecting invoice for client:', clientId, 'lineItems:', invoice.line_items?.length || 0);
       // Cache the invoice
       setCollectingInvoices(prev => ({ ...prev, [clientId]: invoice }));
       setCollectingInvoicesLoading(prev => ({ ...prev, [clientId]: false }));
@@ -807,6 +856,9 @@ export const DataProvider = ({ children }) => {
         ...prev, 
         [invoice.client_id]: result.newCollectingInvoice 
       }));
+      
+      // Clear the collecting invoices cache to force refresh
+      console.log('💾 DEBUG: Clearing collecting invoices cache after send');
 
       // TEMPORARY: SMS disabled during A2P registration - using email only
       // TODO: Re-enable SMS after A2P registration completes
@@ -906,7 +958,17 @@ export const DataProvider = ({ children }) => {
       }
 
       console.log('🏁 DEBUG: sendCollectingInvoiceToClient completed successfully');
-      return result;
+      
+      // Return enhanced result with UI update data
+      return {
+        ...result,
+        uiUpdateData: {
+          sentInvoice: result.sentInvoice,
+          newCollectingInvoice: result.newCollectingInvoice,
+          clientId: invoice.client_id,
+          clientName: client.name
+        }
+      };
     } catch (error) {
       console.error('❌ DEBUG: sendCollectingInvoiceToClient failed:', error);
       console.error('❌ DEBUG: Error stack:', error.stack);
@@ -942,11 +1004,31 @@ export const DataProvider = ({ children }) => {
   /**
    * Gets all collecting invoices for display
    */
-  const getAllCollectingInvoices = async () => {
+  const getAllCollectingInvoices = async (forceRefresh = false) => {
     try {
-      const promises = clients.map(client => getCurrentCollectingInvoice(client.id));
+      console.log('📋 DEBUG: getAllCollectingInvoices called with forceRefresh:', forceRefresh);
+      
+      if (forceRefresh) {
+        console.log('🔄 DEBUG: Force refresh - clearing all collecting invoices cache');
+        setCollectingInvoices({});
+      }
+      
+      const promises = clients.map(client => getCurrentCollectingInvoice(client.id, forceRefresh));
       const invoices = await Promise.all(promises);
-      return invoices.filter(invoice => invoice && invoice.line_items && invoice.line_items.length > 0);
+      const filteredInvoices = invoices.filter(invoice => invoice && invoice.line_items && invoice.line_items.length > 0);
+      
+      console.log('📊 DEBUG: Found collecting invoices:', {
+        total: invoices.length,
+        withLineItems: filteredInvoices.length,
+        invoices: filteredInvoices.map(inv => ({
+          id: inv.id,
+          client_id: inv.client_id,
+          client_name: inv.client_name,
+          lineItemCount: inv.line_items?.length || 0
+        }))
+      });
+      
+      return filteredInvoices;
     } catch (error) {
       console.error('Failed to get all collecting invoices:', error);
       return [];
@@ -1161,6 +1243,10 @@ export const DataProvider = ({ children }) => {
     markServiceComplete,
     collectingInvoices,
     collectingInvoicesLoading,
+    
+    // Refresh functions for UI updates
+    refreshCollectingInvoices: getAllCollectingInvoices,
+    refreshDatabaseInvoices: getAllDatabaseInvoices,
   };
 
   return (

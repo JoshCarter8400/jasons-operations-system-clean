@@ -565,6 +565,7 @@ function CollectingInvoiceEditor() {
                 onClick={handleSendInvoice}
                 disabled={sending || !invoice.line_items || invoice.line_items.length === 0}
                 className="btn btn-success"
+                title={sending ? 'Sending invoice via email...' : 'Send invoice to client and move to Sent tab'}
               >
                 {sending ? '⏳ Sending...' : '📧 Send Invoice'}
               </button>
