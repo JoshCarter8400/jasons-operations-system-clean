@@ -463,6 +463,13 @@ export const DataProvider = ({ children }) => {
   };
 
   const markInvoicePaid = async (id, paymentMethod = '') => {
+    // Cache business info once at the start of the function
+    const currentBusinessInfo = {
+      ...businessSettings.businessInfo,
+      serviceAreas: businessSettings.serviceAreas,
+      paymentMethods: businessSettings.paymentMethods
+    };
+
     const invoice = (businessData.invoices || []).find(inv => inv.id === parseInt(id));
     if (invoice) {
       updateInvoice(id, {
@@ -482,7 +489,7 @@ export const DataProvider = ({ children }) => {
           const emailResult = await sendPaymentReceiptEmail(
             { ...invoice, status: 'Paid', paidDate: new Date().toISOString().split('T')[0] },
             client,
-            businessData.businessInfo,
+            currentBusinessInfo,
             paymentMethod || invoice.paymentMethod
           );
           
@@ -510,6 +517,13 @@ export const DataProvider = ({ children }) => {
   };
 
   const sendInvoice = async (id, method = 'email') => {
+    // Cache business info once at the start of the function
+    const currentBusinessInfo = {
+      ...businessSettings.businessInfo,
+      serviceAreas: businessSettings.serviceAreas,
+      paymentMethods: businessSettings.paymentMethods
+    };
+
     const invoice = (businessData.invoices || []).find(inv => inv.id === parseInt(id));
     if (invoice) {
       updateInvoice(id, {
@@ -523,7 +537,7 @@ export const DataProvider = ({ children }) => {
           const emailResult = await sendInvoiceEmail(
             { ...invoice, status: 'Sent', sentDate: new Date().toISOString().split('T')[0] },
             client,
-            businessData.businessInfo
+            currentBusinessInfo
           );
           
           if (emailResult.success) {
@@ -814,6 +828,14 @@ export const DataProvider = ({ children }) => {
     try {
       console.log('🚀 DEBUG: sendCollectingInvoiceToClient started with invoiceId:', invoiceId);
       
+      // Cache business info once at the start of the function to eliminate performance bottleneck
+      const currentBusinessInfo = {
+        ...businessSettings.businessInfo,
+        serviceAreas: businessSettings.serviceAreas,
+        paymentMethods: businessSettings.paymentMethods
+      };
+      console.log('📊 DEBUG: Business info cached at function start');
+      
       const invoice = await getInvoiceWithLineItems(invoiceId);
       console.log('📋 DEBUG: Found invoice:', {
         id: invoice?.id,
@@ -902,6 +924,7 @@ export const DataProvider = ({ children }) => {
       }
       */
       
+
       // Try email (SMS temporarily disabled)
       if (client.email) {
         console.log('📧 DEBUG: Attempting email send to:', client.email);
@@ -915,14 +938,10 @@ export const DataProvider = ({ children }) => {
             name: client.name,
             email: client.email
           },
-          businessInfo: businessData.businessInfo
+          businessInfo: currentBusinessInfo
         });
         
-        const emailResult = await sendInvoiceEmail(
-          result.sentInvoice,
-          client,
-          businessData.businessInfo
-        );
+        const emailResult = await sendInvoiceEmail(result.sentInvoice, client, currentBusinessInfo);
         console.log('📧 DEBUG: Email function returned:', emailResult);
         
         if (emailResult.success) {

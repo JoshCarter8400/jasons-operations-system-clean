@@ -16,8 +16,6 @@ const BUSINESS_INFO = {
   name: "Trusting and Affordable Tree Service and Lawn Care",
   email: process.env.REACT_APP_JASON_BUSINESS_EMAIL,
   phone: process.env.REACT_APP_JASON_PHONE_NUMBER,
-  serviceAreas: "Sarasota, Bradenton, Nokomis, Osprey, North Venice",
-  paymentMethods: "Zelle, Venmo, Cash App, Check",
   taxRate: 0,
   tagline: "Professional Landscape Services - Glad to be helpful",
   brandColor: "#16a34a"
@@ -62,6 +60,12 @@ const hasValidNotes = (notes) => {
 
 // Create professional HTML email template for invoices
 const createInvoiceEmailHTML = (invoice, client, businessInfo) => {
+  console.log('🔍 DEBUG - businessInfo in email:', businessInfo);
+  console.log('🔍 DEBUG - serviceAreas:', businessInfo.serviceAreas);
+  console.log('🔍 DEBUG - paymentMethods:', businessInfo.paymentMethods);
+  console.log('🔍 DEBUG - serviceAreas type:', typeof businessInfo.serviceAreas);
+  console.log('🔍 DEBUG - paymentMethods type:', typeof businessInfo.paymentMethods);
+  
   const subtotal = invoice.subtotal || 0;
   const total = invoice.total || 0;
   
@@ -156,8 +160,8 @@ const createInvoiceEmailHTML = (invoice, client, businessInfo) => {
       <!-- Payment Information -->
       <div style="background-color: #ecfdf5; border-left: 4px solid ${BUSINESS_INFO.brandColor}; padding: 20px; margin-bottom: 30px;">
         <h3 style="margin: 0 0 10px 0; color: #1f2937;">Payment Information</h3>
-        <p style="margin: 5px 0; color: #6b7280;"><strong>Accepted Methods:</strong> ${BUSINESS_INFO.paymentMethods}</p>
-        <p style="margin: 5px 0; color: #6b7280;"><strong>Service Areas:</strong> ${BUSINESS_INFO.serviceAreas}</p>
+        <p style="margin: 5px 0; color: #6b7280;"><strong>Accepted Methods:</strong> Cash, Cash App, Check, Credit Card, Email Invoice, PayPal, Venmo, Zelle</p>
+        <p style="margin: 5px 0; color: #6b7280;"><strong>Service Areas:</strong> Bradenton, Downtown, Lakewood Ranch, Nokomis, North Venice, Osprey, Sarasota</p>
       </div>
 
       <!-- Footer -->
@@ -265,7 +269,7 @@ const createReceiptEmailHTML = (invoice, client, businessInfo, paymentMethod) =>
         <p style="margin: 5px 0;"><strong>${BUSINESS_INFO.name}</strong></p>
         <p style="margin: 5px 0;">${BUSINESS_INFO.phone} | ${BUSINESS_INFO.email}</p>
         <p style="margin: 5px 0; font-style: italic;">${BUSINESS_INFO.tagline}</p>
-        <p style="margin: 15px 0 5px 0; font-size: 14px;">Serving: ${BUSINESS_INFO.serviceAreas}</p>
+        <p style="margin: 15px 0 5px 0; font-size: 14px;">Serving: Bradenton, Downtown, Lakewood Ranch, Nokomis, North Venice, Osprey, Sarasota</p>
       </div>
     </div>
   </div>
