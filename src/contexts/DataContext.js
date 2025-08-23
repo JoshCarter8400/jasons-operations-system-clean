@@ -842,7 +842,6 @@ export const DataProvider = ({ children }) => {
 
       // TEMPORARY: SMS disabled during A2P registration - using email only
       // TODO: Re-enable SMS after A2P registration completes
-      let sendResult = { success: false };
       
       
       /* TEMPORARILY COMMENTED OUT - SMS FUNCTIONALITY
