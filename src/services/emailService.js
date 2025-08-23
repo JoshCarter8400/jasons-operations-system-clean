@@ -160,8 +160,8 @@ const createInvoiceEmailHTML = (invoice, client, businessInfo) => {
       <!-- Payment Information -->
       <div style="background-color: #ecfdf5; border-left: 4px solid ${BUSINESS_INFO.brandColor}; padding: 20px; margin-bottom: 30px;">
         <h3 style="margin: 0 0 10px 0; color: #1f2937;">Payment Information</h3>
-        <p style="margin: 5px 0; color: #6b7280;"><strong>Accepted Methods:</strong> Cash, Cash App, Check, Credit Card, Email Invoice, PayPal, Venmo, Zelle</p>
-        <p style="margin: 5px 0; color: #6b7280;"><strong>Service Areas:</strong> Bradenton, Downtown, Lakewood Ranch, Nokomis, North Venice, Osprey, Sarasota</p>
+        <p style="margin: 5px 0; color: #6b7280;"><strong>Accepted Methods:</strong> ${(businessInfo.paymentMethods || []).join(', ')}</p>
+        <p style="margin: 5px 0; color: #6b7280;"><strong>Service Areas:</strong> ${(businessInfo.serviceAreas || []).join(', ')}</p>
       </div>
 
       <!-- Footer -->
@@ -269,7 +269,7 @@ const createReceiptEmailHTML = (invoice, client, businessInfo, paymentMethod) =>
         <p style="margin: 5px 0;"><strong>${BUSINESS_INFO.name}</strong></p>
         <p style="margin: 5px 0;">${BUSINESS_INFO.phone} | ${BUSINESS_INFO.email}</p>
         <p style="margin: 5px 0; font-style: italic;">${BUSINESS_INFO.tagline}</p>
-        <p style="margin: 15px 0 5px 0; font-size: 14px;">Serving: Bradenton, Downtown, Lakewood Ranch, Nokomis, North Venice, Osprey, Sarasota</p>
+        <p style="margin: 15px 0 5px 0; font-size: 14px;">Serving: ${(businessInfo.serviceAreas || []).join(', ')}</p>
       </div>
     </div>
   </div>
@@ -724,7 +724,7 @@ const createInvoiceSMSText = (invoice, client, businessInfo) => {
 💰 Total: $${total}
 🔧 Services: ${serviceCount} item${serviceCount !== 1 ? 's' : ''}
 
-💳 Payment Options: ${businessInfo.paymentMethods}
+💳 Payment Options: ${(businessInfo.paymentMethods || []).join(', ')}
 
 📞 Questions? Call ${businessInfo.phone}
 
