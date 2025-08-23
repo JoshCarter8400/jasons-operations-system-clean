@@ -56,15 +56,8 @@ function InvoiceList() {
     }
   }, [location.state]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Refresh invoices when returning from other routes
-  useEffect(() => {
-    const handleFocus = () => {
-      loadAllInvoices(true); // Force refresh when window regains focus
-    };
-
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Remove window focus refresh to eliminate unnecessary database calls
+  // The component now uses efficient state updates instead of full refreshes
 
   const loadAllInvoices = async (forceRefresh = false) => {
     try {
@@ -109,19 +102,19 @@ function InvoiceList() {
     try {
       setSending(prev => ({ ...prev, [invoice.id]: true }));
       
-      const result = await sendCollectingInvoiceToClient(invoice.id);
-      
-      // Immediately remove from collecting invoices UI (optimistic update)
+      // Optimistic update: immediately remove from collecting invoices UI
       setCollectingInvoices(prev => {
         const filtered = prev.filter(inv => inv.id !== invoice.id);
         return filtered;
       });
       
-      // Show immediate success feedback
+      const result = await sendCollectingInvoiceToClient(invoice.id);
+      
+      // Show immediate success feedback and add to database invoices
       if (result.uiUpdateData) {
         const { sentInvoice, clientName } = result.uiUpdateData;
         
-        // Add to database invoices for Sent tab
+        // Add to database invoices for Sent tab with optimistic update
         setDatabaseInvoices(prev => [{
           id: sentInvoice.id,
           invoice_number: sentInvoice.invoice_number,
@@ -146,32 +139,12 @@ function InvoiceList() {
         alert(`✅ Success!\n\nInvoice #${sentInvoice.invoice_number} sent to ${clientName}!\n\nThe invoice has been moved to the Sent tab.`);
       }
       
-      // Force refresh data from backend with cache clear to ensure consistency
-      const [collecting, database] = await Promise.all([
-        getAllCollectingInvoices(true), // Force refresh with cache clear
-        getAllDatabaseInvoices()
-      ]);
-      
-      
-      setCollectingInvoices(collecting);
-      setDatabaseInvoices(database);
-      
-      // Additional safeguard: Force a final refresh after a short delay
-      setTimeout(async () => {
-        try {
-          const finalCollecting = await getAllCollectingInvoices(true);
-          setCollectingInvoices(finalCollecting);
-        } catch (error) {
-          console.error('Final safeguard refresh failed:', error);
-        }
-      }, 1000);
-      
     } catch (error) {
       console.error('Failed to send invoice:', error);
       alert('Failed to send invoice. Please try again.');
       
-      // Revert optimistic update on error
-      await loadAllInvoices();
+      // Revert optimistic update on error - add invoice back to collecting list
+      setCollectingInvoices(prev => [...prev, invoice]);
     } finally {
       setSending(prev => ({ ...prev, [invoice.id]: false }));
     }
@@ -190,14 +163,24 @@ function InvoiceList() {
       
       if (activeTab === 'collecting') {
         await markCollectingInvoicePaid(invoiceId, paymentMethod);
+        // Remove from collecting invoices with optimistic update
+        setCollectingInvoices(prev => prev.filter(inv => inv.id !== invoiceId));
       } else {
         // For database invoices (sent/paid), use the enhanced helper that sends receipt emails
         const { markInvoicePaidWithReceipt } = await import('../utils/invoiceHelpers');
         await markInvoicePaidWithReceipt(invoiceId, paymentMethod);
+        
+        // Optimistic update: move invoice from Sent to Paid status
+        setDatabaseInvoices(prev => prev.map(inv => 
+          inv.id === invoiceId 
+            ? { ...inv, status: 'Paid', paidDate: new Date().toISOString().split('T')[0], paymentMethod }
+            : inv
+        ));
+        
+        // Switch to Paid tab to show the updated invoice
+        setActiveTab('paid');
       }
       
-      // Refresh all data
-      await loadAllInvoices();
     } catch (error) {
       console.error('Failed to mark invoice as paid:', error);
       alert('Failed to mark invoice as paid. Please try again.');
@@ -242,8 +225,8 @@ function InvoiceList() {
         // Close confirmation dialog
         setDeleteConfirmation(null);
         
-        // Refresh all data to reflect the deletion
-        await loadAllInvoices();
+        // Optimistic update: remove invoice from collecting invoices
+        setCollectingInvoices(prev => prev.filter(inv => inv.id !== invoice.id));
         
         alert(`Invoice deleted successfully!\n\nDeleted Invoice #${result.deletedInvoice.invoice_number || invoice.id} for ${result.deletedInvoice.client_name}`);
       }
@@ -453,7 +436,7 @@ function InvoiceList() {
                       <div className="flex flex-col gap-3">
                         <div className="flex flex-col sm:flex-row gap-2">
                           <button
-                            onClick={() => navigate(`/invoicing/${invoice.id}`)}
+                            onClick={() => navigate(`/invoicing/${invoice.id}`, { state: { invoiceData: invoice } })}
                             className="btn btn-outline min-h-[44px] py-3 px-4 font-medium"
                           >
                             👁️ View
@@ -890,26 +873,30 @@ function InvoiceDetail() {
   
   const { id } = useParams();
   const navigate = useNavigate();
-  const [invoice, setInvoice] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const location = useLocation();
+  const [invoice, setInvoice] = useState(location.state?.invoiceData || null);
+  const [loading, setLoading] = useState(!location.state?.invoiceData);
   const [markingPaid, setMarkingPaid] = useState(false);
 
   useEffect(() => {
-    const loadInvoice = async () => {
-      try {
-        setLoading(true);
-        const databaseInvoices = await getAllDatabaseInvoices();
-        const foundInvoice = databaseInvoices.find(inv => inv.id === parseInt(id));
-        setInvoice(foundInvoice);
-      } catch (error) {
-        console.error('Failed to load invoice:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    loadInvoice();
-  }, [id, getAllDatabaseInvoices]);
+    // Only fetch from database if invoice data wasn't passed via navigation state
+    if (!location.state?.invoiceData) {
+      const loadInvoice = async () => {
+        try {
+          setLoading(true);
+          const databaseInvoices = await getAllDatabaseInvoices();
+          const foundInvoice = databaseInvoices.find(inv => inv.id === parseInt(id));
+          setInvoice(foundInvoice);
+        } catch (error) {
+          console.error('Failed to load invoice:', error);
+        } finally {
+          setLoading(false);
+        }
+      };
+      
+      loadInvoice();
+    }
+  }, [id, getAllDatabaseInvoices, location.state?.invoiceData]);
 
   if (loading) {
     return (
@@ -976,10 +963,13 @@ function InvoiceDetail() {
       const { markInvoicePaidWithReceipt } = await import('../utils/invoiceHelpers');
       await markInvoicePaidWithReceipt(invoice.id, paymentMethod);
       
-      // Refresh invoice data
-      const databaseInvoices = await getAllDatabaseInvoices();
-      const updatedInvoice = databaseInvoices.find(inv => inv.id === parseInt(id));
-      setInvoice(updatedInvoice);
+      // Optimistically update the invoice state
+      setInvoice(prev => ({
+        ...prev,
+        status: 'Paid',
+        paidDate: new Date().toISOString().split('T')[0],
+        paymentMethod
+      }));
       
     } catch (error) {
       console.error('Failed to mark invoice as paid:', error);
@@ -1000,7 +990,7 @@ function InvoiceDetail() {
             <h1 className="card-title">Invoice #{invoice.invoice_number || invoice.id}</h1>
             <div className="flex gap-2 ml-auto">
               <button
-                onClick={() => navigate(`/invoicing/${invoice.id}/edit`)}
+                onClick={() => navigate(`/invoicing/${invoice.id}/edit`, { state: { invoiceData: invoice } })}
                 className="btn btn-primary"
                 disabled={invoice.status === 'Paid'}
               >
@@ -1269,7 +1259,7 @@ function EditInvoice() {
       total
     });
     
-    navigate(`/invoicing/${invoice.id}`);
+    navigate(`/invoicing/${invoice.id}`, { state: { invoiceData: invoice } });
   };
 
   return (
@@ -1277,7 +1267,7 @@ function EditInvoice() {
       <div className="card">
         <div className="card-header">
           <div className="flex items-center gap-4">
-            <button onClick={() => navigate(`/invoicing/${invoice.id}`)} className="btn btn-outline">
+            <button onClick={() => navigate(`/invoicing/${invoice.id}`, { state: { invoiceData: invoice } })} className="btn btn-outline">
               ← Back
             </button>
             <h1 className="card-title">Edit Invoice #{invoice.invoice_number || invoice.id}</h1>
@@ -1377,12 +1367,15 @@ function EditInvoice() {
                     </div>
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium mb-2">Qty *</label>
-                      <AmountInput
-                        value={service.quantity}
-                        onChange={(e) => handleServiceChange(index, 'quantity', parseFloat(e.target.value) || 1)}
-                        name="quantity"
-                        placeholder="1"
+                      <input
+                        type="number"
                         required
+                        value={service.quantity}
+                        onChange={(e) => handleServiceChange(index, 'quantity', parseInt(e.target.value) || 1)}
+                        className="w-full p-3 border border-gray-300 rounded-md"
+                        placeholder="1"
+                        min="1"
+                        step="1"
                       />
                     </div>
                     <div className="md:col-span-2">
@@ -1452,7 +1445,7 @@ function EditInvoice() {
               </button>
               <button
                 type="button"
-                onClick={() => navigate(`/invoicing/${invoice.id}`)}
+                onClick={() => navigate(`/invoicing/${invoice.id}`, { state: { invoiceData: invoice } })}
                 className="btn btn-outline"
               >
                 Cancel

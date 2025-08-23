@@ -360,29 +360,44 @@ function CollectingInvoiceEditor() {
                     {editing[lineItem.id] === 'editing' ? (
                       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
                         <div className="md:col-span-4">
-                          <label className="block text-sm font-medium mb-2">Service Description</label>
-                          <input
-                            type="text"
+                          <label className="block text-sm font-medium mb-2">Service Description *</label>
+                          <select
+                            required
                             value={editService.description}
                             onChange={(e) => setEditService({...editService, description: e.target.value})}
                             className="w-full p-3 border border-gray-300 rounded-md"
-                            list="predefined-services"
-                          />
-                          <datalist id="predefined-services">
+                          >
+                            <option value="">Select a service...</option>
                             {services.map(s => (
-                              <option key={s.name} value={s.name} />
+                              <option key={s.name} value={s.name}>{s.name}</option>
                             ))}
-                          </datalist>
+                          </select>
                         </div>
                         <div className="md:col-span-2">
                           <label className="block text-sm font-medium mb-2">Qty</label>
                           <input
-                            type="number"
+                            type="text"
+                            required
                             value={editService.quantity}
-                            onChange={(e) => setEditService({...editService, quantity: parseFloat(e.target.value) || 1})}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              // Only allow whole numbers or empty
+                              if (value === '' || /^\d+$/.test(value)) {
+                                setEditService({...editService, quantity: value === '' ? '' : parseInt(value)});
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              // Allow backspace, delete, arrow keys, tab
+                              if (['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.key)) {
+                                return;
+                              }
+                              // Only allow digits
+                              if (!/^\d$/.test(e.key)) {
+                                e.preventDefault();
+                              }
+                            }}
                             className="w-full p-3 border border-gray-300 rounded-md"
-                            min="0.1"
-                            step="0.1"
+                            placeholder=""
                           />
                         </div>
                         <div className="md:col-span-2">
@@ -464,25 +479,44 @@ function CollectingInvoiceEditor() {
             <h4 className="font-medium mb-4">Add New Service</h4>
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
               <div className="md:col-span-4">
-                <label className="block text-sm font-medium mb-2">Service Description</label>
-                <input
-                  type="text"
+                <label className="block text-sm font-medium mb-2">Service Description *</label>
+                <select
+                  required
                   value={newService.description}
                   onChange={(e) => setNewService({...newService, description: e.target.value})}
                   className="w-full p-3 border border-gray-300 rounded-md"
-                  placeholder="Enter service description"
-                  list="predefined-services"
-                />
+                >
+                  <option value="">Select a service...</option>
+                  {services.map(s => (
+                    <option key={s.name} value={s.name}>{s.name}</option>
+                  ))}
+                </select>
               </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium mb-2">Qty</label>
                 <input
-                  type="number"
+                  type="text"
+                  required
                   value={newService.quantity}
-                  onChange={(e) => setNewService({...newService, quantity: parseFloat(e.target.value) || 1})}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    // Only allow whole numbers or empty
+                    if (value === '' || /^\d+$/.test(value)) {
+                      setNewService({...newService, quantity: value === '' ? '' : parseInt(value)});
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    // Allow backspace, delete, arrow keys, tab
+                    if (['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.key)) {
+                      return;
+                    }
+                    // Only allow digits
+                    if (!/^\d$/.test(e.key)) {
+                      e.preventDefault();
+                    }
+                  }}
                   className="w-full p-3 border border-gray-300 rounded-md"
-                  min="0.1"
-                  step="0.1"
+                  placeholder=""
                 />
               </div>
               <div className="md:col-span-2">
