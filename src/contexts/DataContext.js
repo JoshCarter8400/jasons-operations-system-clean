@@ -107,11 +107,9 @@ export const DataProvider = ({ children }) => {
         
         // Check if migration needs to be run
         if (!isMigrationCompleted()) {
-          console.log('🔄 Business settings migration needed, executing...');
-          const migrationResult = await executeBusinessSettingsMigration();
+            const migrationResult = await executeBusinessSettingsMigration();
           
           if (!migrationResult.success) {
-            console.error('❌ Migration failed, using localStorage fallback');
             // Fall back to localStorage data
             setBusinessSettings({
               businessInfo: businessData.businessInfo,
@@ -124,7 +122,6 @@ export const DataProvider = ({ children }) => {
             return;
           }
           
-          console.log('✅ Migration completed successfully');
         }
         
         // Load from database
@@ -376,7 +373,6 @@ export const DataProvider = ({ children }) => {
 
   const addInvoice = async (invoiceData) => {
     try {
-      console.log('🔄 DEBUG: Manual invoice creation started for client:', invoiceData.clientId);
       
       // DUPLICATE PREVENTION: Check if customer already has a collecting invoice WITH LINE ITEMS
       // This aligns with UI logic which only shows invoices with line items
@@ -393,16 +389,13 @@ export const DataProvider = ({ children }) => {
             `Please don't create invoice for ${clientName} - they already have a collecting invoice with ${fullInvoice.line_items.length} service(s). Please add the service to the existing collecting invoice.`
           );
         } else {
-          console.log('✅ DEBUG: Found empty collecting invoice, allowing creation (will replace empty invoice)');
           // If there's an empty collecting invoice, we can safely delete it and create a new one
           if (fullInvoice && (!fullInvoice.line_items || fullInvoice.line_items.length === 0)) {
-            console.log('🗑️ DEBUG: Deleting empty collecting invoice to replace with new manual invoice');
             await deleteInvoiceSafely(existingCollecting.id);
           }
         }
       }
       
-      console.log('✅ DEBUG: No existing collecting invoice found, proceeding with creation');
       
       // Create invoice with proper numbering in database
       const dbInvoice = await insertInvoiceWithNumber({
@@ -419,7 +412,6 @@ export const DataProvider = ({ children }) => {
         paid_date: null
       });
 
-      console.log('📋 DEBUG: Invoice created in database with ID:', dbInvoice.id);
 
       // Add line items to the database invoice
       if (invoiceData.services && invoiceData.services.length > 0) {
@@ -431,23 +423,20 @@ export const DataProvider = ({ children }) => {
             amount: service.amount
           });
         }
-        console.log('📝 DEBUG: Added', invoiceData.services.length, 'line items to invoice');
       }
 
       // Get the complete invoice with line items for caching
       const completeInvoice = await getInvoiceWithLineItems(dbInvoice.id);
       
       // Update the collecting invoices cache so it appears in the UI immediately
-      console.log('💾 DEBUG: Caching new manual invoice in collecting invoices');
       setCollectingInvoices(prev => ({ 
         ...prev, 
         [invoiceData.clientId]: completeInvoice 
       }));
 
-      console.log('✅ DEBUG: Manual invoice creation completed successfully');
       return completeInvoice;
     } catch (error) {
-      console.error('❌ Failed to create invoice:', error);
+      console.error('Failed to create invoice:', error);
       throw error;
     }
   };
@@ -657,21 +646,17 @@ export const DataProvider = ({ children }) => {
     try {
       setCollectingInvoicesLoading(prev => ({ ...prev, [clientId]: true }));
       
-      console.log('🔍 DEBUG: getCurrentCollectingInvoice called for client:', clientId, 'bypassCache:', bypassCache);
       
       // Check cache first (unless bypassing)
       if (!bypassCache && collectingInvoices[clientId]) {
-        console.log('📦 DEBUG: Using cached collecting invoice for client:', clientId);
         setCollectingInvoicesLoading(prev => ({ ...prev, [clientId]: false }));
         return collectingInvoices[clientId];
       }
 
-      console.log('🔍 DEBUG: Fetching collecting invoice from database for client:', clientId);
       // Try to get existing collecting invoice
       let invoice = await getCollectingInvoiceForClient(clientId);
       
       if (!invoice) {
-        console.log('🆕 DEBUG: No collecting invoice found, creating new one for client:', clientId);
         // Create new collecting invoice
         const client = clients.find(c => c.id === clientId);
         if (!client) {
@@ -680,12 +665,10 @@ export const DataProvider = ({ children }) => {
         
         invoice = await createCollectingInvoice(clientId, client);
       } else {
-        console.log('📋 DEBUG: Found collecting invoice, getting full details for client:', clientId);
         // Get full invoice with line items
         invoice = await getInvoiceWithLineItems(invoice.id);
       }
 
-      console.log('💾 DEBUG: Caching collecting invoice for client:', clientId, 'lineItems:', invoice.line_items?.length || 0);
       // Cache the invoice
       setCollectingInvoices(prev => ({ ...prev, [clientId]: invoice }));
       setCollectingInvoicesLoading(prev => ({ ...prev, [clientId]: false }));
@@ -826,7 +809,6 @@ export const DataProvider = ({ children }) => {
    */
   const sendCollectingInvoiceToClient = async (invoiceId) => {
     try {
-      console.log('🚀 DEBUG: sendCollectingInvoiceToClient started with invoiceId:', invoiceId);
       
       // Cache business info once at the start of the function to eliminate performance bottleneck
       const currentBusinessInfo = {
@@ -834,27 +816,14 @@ export const DataProvider = ({ children }) => {
         serviceAreas: businessSettings.serviceAreas,
         paymentMethods: businessSettings.paymentMethods
       };
-      console.log('📊 DEBUG: Business info cached at function start');
       
       const invoice = await getInvoiceWithLineItems(invoiceId);
-      console.log('📋 DEBUG: Found invoice:', {
-        id: invoice?.id,
-        invoice_number: invoice?.invoice_number,
-        client_id: invoice?.client_id,
-        status: invoice?.status
-      });
       
       if (!invoice) {
         throw new Error('Invoice not found');
       }
 
       const client = clients.find(c => c.id === invoice.client_id);
-      console.log('👤 DEBUG: Found client:', {
-        id: client?.id,
-        name: client?.name,
-        phone: client?.phone,
-        email: client?.email
-      });
       
       if (!client) {
         throw new Error('Client not found');
@@ -862,16 +831,6 @@ export const DataProvider = ({ children }) => {
 
       // Send the collecting invoice
       const result = await sendCollectingInvoice(invoiceId, client);
-      console.log('✅ DEBUG: sendCollectingInvoice completed. Result:', {
-        sentInvoice: {
-          id: result?.sentInvoice?.id,
-          invoice_number: result?.sentInvoice?.invoice_number,
-          status: result?.sentInvoice?.status
-        },
-        newCollectingInvoice: {
-          id: result?.newCollectingInvoice?.id
-        }
-      });
       
       // Update cache - remove old collecting invoice and add new one
       setCollectingInvoices(prev => ({ 
@@ -880,103 +839,71 @@ export const DataProvider = ({ children }) => {
       }));
       
       // Clear the collecting invoices cache to force refresh
-      console.log('💾 DEBUG: Clearing collecting invoices cache after send');
 
       // TEMPORARY: SMS disabled during A2P registration - using email only
       // TODO: Re-enable SMS after A2P registration completes
       let sendResult = { success: false };
       
-      console.log('📞 DEBUG: Checking communication methods - Phone:', client.phone, 'Email:', client.email);
-      console.log('📱 DEBUG: SMS TEMPORARILY DISABLED - skipping to email');
       
       /* TEMPORARILY COMMENTED OUT - SMS FUNCTIONALITY
       if (client.phone) {
-        console.log('📱 DEBUG: Attempting SMS send to:', client.phone);
         const { sendInvoiceSMS } = await import('../services/emailService');
         sendResult = await sendInvoiceSMS(
           result.sentInvoice,
           client,
           businessData.businessInfo
         );
-        console.log('📱 DEBUG: SMS result:', sendResult);
         
         if (sendResult.success) {
-          console.log('✅ DEBUG: SMS success, creating notification');
           createEmailNotification(
             'invoice_sent',
             'Invoice SMS Sent Successfully!',
             `Invoice #${result.sentInvoice.invoice_number} sent via SMS to ${client.phone}`,
             true
           );
-          console.log('✅ DEBUG: SMS success notification created');
         } else {
-          console.log('❌ DEBUG: SMS failed, creating warning notification');
           createEmailNotification(
             'invoice_warning',
             'SMS Send Failed',
             `Failed to send SMS to ${client.phone}, trying email...`,
             false
           );
-          console.log('❌ DEBUG: SMS failure notification created');
         }
       } else {
-        console.log('📱 DEBUG: No phone number, skipping SMS');
       }
       */
       
 
       // Try email (SMS temporarily disabled)
       if (client.email) {
-        console.log('📧 DEBUG: Attempting email send to:', client.email);
-        console.log('📧 DEBUG: Email function parameters:', {
-          invoice: {
-            id: result.sentInvoice.id,
-            invoice_number: result.sentInvoice.invoice_number,
-            total: result.sentInvoice.total
-          },
-          client: {
-            name: client.name,
-            email: client.email
-          },
-          businessInfo: currentBusinessInfo
-        });
         
         const emailResult = await sendInvoiceEmail(result.sentInvoice, client, currentBusinessInfo);
-        console.log('📧 DEBUG: Email function returned:', emailResult);
         
         if (emailResult.success) {
-          console.log('✅ DEBUG: Email success, creating notification');
           createEmailNotification(
             'invoice_sent',
             'Invoice Email Sent Successfully!',
             `Invoice #${result.sentInvoice.invoice_number} sent via email to ${client.email}`,
             true
           );
-          console.log('✅ DEBUG: Email success notification created');
         } else {
-          console.log('❌ DEBUG: Email failed, creating error notification');
           createEmailNotification(
             'invoice_error',
             'Email Send Failed',
             `Failed to send email to ${client.email}: ${emailResult.error}`,
             false
           );
-          console.log('❌ DEBUG: Email failure notification created');
         }
       } else if (!client.email) {
-        console.log('⚠️ DEBUG: No contact methods available');
         createEmailNotification(
           'invoice_warning',
           'No Contact Method Available',
           `Invoice #${result.sentInvoice.invoice_number} marked as sent - no phone or email on file for ${client.name}`,
           false
         );
-        console.log('⚠️ DEBUG: No contact methods notification created');
       } else {
-        console.log('ℹ️ DEBUG: Skipping email (sendResult.success:', sendResult.success, ', client.email:', !!client.email, ')');
       }
 
-      console.log('🏁 DEBUG: sendCollectingInvoiceToClient completed successfully');
       
       // Return enhanced result with UI update data
       return {
@@ -989,8 +916,6 @@ export const DataProvider = ({ children }) => {
         }
       };
     } catch (error) {
-      console.error('❌ DEBUG: sendCollectingInvoiceToClient failed:', error);
-      console.error('❌ DEBUG: Error stack:', error.stack);
       throw error;
     }
   };
@@ -1025,10 +950,8 @@ export const DataProvider = ({ children }) => {
    */
   const getAllCollectingInvoices = async (forceRefresh = false) => {
     try {
-      console.log('📋 DEBUG: getAllCollectingInvoices called with forceRefresh:', forceRefresh);
       
       if (forceRefresh) {
-        console.log('🔄 DEBUG: Force refresh - clearing all collecting invoices cache');
         setCollectingInvoices({});
       }
       
@@ -1036,16 +959,6 @@ export const DataProvider = ({ children }) => {
       const invoices = await Promise.all(promises);
       const filteredInvoices = invoices.filter(invoice => invoice && invoice.line_items && invoice.line_items.length > 0);
       
-      console.log('📊 DEBUG: Found collecting invoices:', {
-        total: invoices.length,
-        withLineItems: filteredInvoices.length,
-        invoices: filteredInvoices.map(inv => ({
-          id: inv.id,
-          client_id: inv.client_id,
-          client_name: inv.client_name,
-          lineItemCount: inv.line_items?.length || 0
-        }))
-      });
       
       return filteredInvoices;
     } catch (error) {
@@ -1088,7 +1001,7 @@ export const DataProvider = ({ children }) => {
       return deleteResult;
       
     } catch (error) {
-      console.error('❌ Failed to delete invoice:', error);
+      console.error('Failed to delete invoice:', error);
       throw error;
     }
   };

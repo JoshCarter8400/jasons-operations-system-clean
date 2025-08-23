@@ -258,19 +258,7 @@ export const execute = async (sql, params = []) => {
   try {
     const client = await initializeDatabase();
     
-    if (DEBUG) {
-      console.log('🔍 Executing SQL:', sql, params.length > 0 ? 'with params:' : '', params);
-    }
-    
     const result = await client.execute(sql, params);
-    
-    if (DEBUG) {
-      console.log('📊 Query result:', { 
-        rowsAffected: result.rowsAffected, 
-        lastInsertRowidd: result.lastInsertRowid,
-        rowCount: result.rows?.length || 0 
-      });
-    }
     
     return result;
   } catch (error) {

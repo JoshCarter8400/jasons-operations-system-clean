@@ -48,7 +48,6 @@ function InvoiceList() {
   // Check if we need to refresh after navigation from manual invoice creation
   useEffect(() => {
     if (location.state?.refreshInvoices) {
-      console.log('🔄 Refreshing invoices after manual creation...');
       loadAllInvoices(true); // Force refresh
       setActiveTab('collecting'); // Switch to collecting tab to show new invoice
       
@@ -60,7 +59,6 @@ function InvoiceList() {
   // Refresh invoices when returning from other routes
   useEffect(() => {
     const handleFocus = () => {
-      console.log('🔄 Invoice list regained focus, refreshing data...');
       loadAllInvoices(true); // Force refresh when window regains focus
     };
 
@@ -77,16 +75,11 @@ function InvoiceList() {
         setRefreshing(true); // Show refresh indicator for subsequent loads
       }
       
-      console.log('📋 UI: Loading all invoices, forceRefresh:', forceRefresh);
       const [collecting, database] = await Promise.all([
         getAllCollectingInvoices(forceRefresh),
         getAllDatabaseInvoices()
       ]);
       
-      console.log('📊 UI: Invoices loaded:', {
-        collecting: collecting.length,
-        database: database.length
-      });
       
       // Conservative fix: Only update state if we have valid data
       // This prevents temporary disappearing of collecting invoices during refresh
@@ -116,15 +109,11 @@ function InvoiceList() {
     try {
       setSending(prev => ({ ...prev, [invoice.id]: true }));
       
-      console.log('🚀 UI: Sending collecting invoice:', { id: invoice.id, client: invoice.client_name });
       const result = await sendCollectingInvoiceToClient(invoice.id);
-      console.log('✅ UI: Send completed, result:', result.uiUpdateData ? 'success' : 'no update data');
       
       // Immediately remove from collecting invoices UI (optimistic update)
-      console.log('🔄 UI: Optimistically removing invoice from collecting list');
       setCollectingInvoices(prev => {
         const filtered = prev.filter(inv => inv.id !== invoice.id);
-        console.log('📋 UI: Collecting invoices updated:', { before: prev.length, after: filtered.length });
         return filtered;
       });
       
@@ -132,7 +121,6 @@ function InvoiceList() {
       if (result.uiUpdateData) {
         const { sentInvoice, clientName } = result.uiUpdateData;
         
-        console.log('✅ UI: Adding sent invoice to database invoices list');
         // Add to database invoices for Sent tab
         setDatabaseInvoices(prev => [{
           id: sentInvoice.id,
@@ -152,37 +140,29 @@ function InvoiceList() {
           paymentMethod: sentInvoice.payment_method
         }, ...prev]);
         
-        console.log('📝 UI: Switching to Sent tab to show result');
         // Switch to Sent tab to show the result
         setActiveTab('sent');
         
         alert(`✅ Success!\n\nInvoice #${sentInvoice.invoice_number} sent to ${clientName}!\n\nThe invoice has been moved to the Sent tab.`);
       }
       
-      console.log('🔄 UI: Force refreshing data from backend with cache clear');
       // Force refresh data from backend with cache clear to ensure consistency
       const [collecting, database] = await Promise.all([
         getAllCollectingInvoices(true), // Force refresh with cache clear
         getAllDatabaseInvoices()
       ]);
       
-      console.log('📊 UI: Backend refresh completed:', {
-        collecting: collecting.length,
-        database: database.length
-      });
       
       setCollectingInvoices(collecting);
       setDatabaseInvoices(database);
       
       // Additional safeguard: Force a final refresh after a short delay
       setTimeout(async () => {
-        console.log('⏰ UI: Final safeguard refresh after 1 second');
         try {
           const finalCollecting = await getAllCollectingInvoices(true);
-          console.log('✅ UI: Final collecting count:', finalCollecting.length);
           setCollectingInvoices(finalCollecting);
         } catch (error) {
-          console.error('❌ UI: Final safeguard refresh failed:', error);
+          console.error('Final safeguard refresh failed:', error);
         }
       }, 1000);
       
@@ -191,7 +171,6 @@ function InvoiceList() {
       alert('Failed to send invoice. Please try again.');
       
       // Revert optimistic update on error
-      console.log('❌ UI: Error occurred, reverting optimistic update');
       await loadAllInvoices();
     } finally {
       setSending(prev => ({ ...prev, [invoice.id]: false }));
@@ -691,14 +670,13 @@ function CreateInvoice() {
         total
       });
       
-      console.log('✅ Manual invoice created successfully:', newInvoice.invoice_number);
       alert(`✅ Success!\n\nInvoice #${newInvoice.invoice_number || newInvoice.id} created successfully!\n\nThe invoice is now in your Collecting tab and ready for editing.`);
       
       // Navigate to invoicing with collecting tab active to show the new invoice
       // Use replace to ensure the invoice list refreshes on navigation
       navigate('/invoicing', { replace: true, state: { refreshInvoices: true } });
     } catch (error) {
-      console.error('❌ Failed to create invoice:', error);
+      console.error('Failed to create invoice:', error);
       
       // Handle duplicate collecting invoice error specifically
       if (error.message && error.message.includes('they already have a collecting invoice')) {

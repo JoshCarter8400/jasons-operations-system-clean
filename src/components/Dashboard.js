@@ -14,7 +14,9 @@ function Dashboard() {
   const [equipmentDueForService, setEquipmentDueForService] = useState([]);
   const [invoiceStats, setInvoiceStats] = useState({ 
     monthlyRevenue: 0, 
+    yearlyRevenue: 0,
     pendingAmount: 0, 
+    outstandingAmount: 0,
     overdueAmount: 0 
   });
   const [jobsThisWeek, setJobsThisWeek] = useState(0);
@@ -35,23 +37,83 @@ function Dashboard() {
     }
   }, []);
 
+  // Helper function to check if a date is in the current month
+  const isCurrentMonth = (dateStr) => {
+    if (!dateStr) return false;
+    const date = new Date(dateStr);
+    const now = new Date();
+    return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+  };
+
+  // Helper function to check if a date is in the current year
+  const isCurrentYear = (dateStr) => {
+    if (!dateStr) return false;
+    const date = new Date(dateStr);
+    const now = new Date();
+    return date.getFullYear() === now.getFullYear();
+  };
+
   const loadInvoiceStats = useCallback(async () => {
     try {
       const dbInvoices = await getAllDatabaseInvoices();
+      const now = new Date();
       
-      // Calculate monthly revenue from paid invoices  
-      const monthlyRevenue = dbInvoices
-        .filter(invoice => invoice.status === 'Paid')
+      
+      
+      // Calculate monthly revenue from paid invoices for current month only
+      const monthlyInvoices = dbInvoices
+        .filter(invoice => {
+          const isCurrentMonthResult = invoice.status === 'Paid' && isCurrentMonth(invoice.paid_date || invoice.paidDate);
+          return isCurrentMonthResult;
+        });
+      
+      const monthlyRevenue = monthlyInvoices.reduce((sum, invoice) => sum + (invoice.total || 0), 0);
+
+      // Calculate yearly revenue for "Total Collected for the Year"
+      const yearlyInvoices = dbInvoices
+        .filter(invoice => {
+          const isCurrentYearResult = invoice.status === 'Paid' && isCurrentYear(invoice.paid_date || invoice.paidDate);
+          return isCurrentYearResult;
+        });
+      
+      const yearlyRevenue = yearlyInvoices.reduce((sum, invoice) => sum + (invoice.total || 0), 0);
+
+      // Calculate pending invoices (sent but not paid)
+      const pendingAmount = dbInvoices
+        .filter(invoice => invoice.status === 'Sent')
+        .reduce((sum, invoice) => sum + (invoice.total || 0), 0);
+
+      // Calculate outstanding balance (sent invoices + collecting invoices)
+      const outstandingAmount = dbInvoices
+        .filter(invoice => invoice.status === 'Sent' || invoice.status === 'collecting')
+        .reduce((sum, invoice) => sum + (invoice.total || 0), 0);
+
+      // Calculate overdue invoices (sent invoices past due date)
+      const overdueAmount = dbInvoices
+        .filter(invoice => {
+          if (invoice.status !== 'Sent') return false;
+          if (!invoice.due_date && !invoice.dueDate) return false;
+          const dueDate = new Date(invoice.due_date || invoice.dueDate);
+          return dueDate < now;
+        })
         .reduce((sum, invoice) => sum + (invoice.total || 0), 0);
       
       setInvoiceStats({ 
-        monthlyRevenue, 
-        pendingAmount: 0, 
-        overdueAmount: 0 
+        monthlyRevenue,
+        yearlyRevenue,
+        pendingAmount, 
+        outstandingAmount,
+        overdueAmount 
       });
     } catch (error) {
       console.error('Error loading invoice stats:', error);
-      setInvoiceStats({ monthlyRevenue: 0 });
+      setInvoiceStats({ 
+        monthlyRevenue: 0, 
+        yearlyRevenue: 0, 
+        pendingAmount: 0, 
+        outstandingAmount: 0, 
+        overdueAmount: 0 
+      });
     }
   }, [getAllDatabaseInvoices]);
 
@@ -227,12 +289,12 @@ function Dashboard() {
                     <span className="font-medium text-yellow-600">${invoiceStats.pendingAmount.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Total Collected</span>
-                    <span className="font-medium text-green-600">${clients.reduce((sum, client) => sum + (client.totalPaid || 0), 0).toFixed(2)}</span>
+                    <span>Total Collected for the Year</span>
+                    <span className="font-medium text-green-600">${invoiceStats.yearlyRevenue.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Outstanding Balance</span>
-                    <span className="font-medium text-yellow-600">${(clients.reduce((sum, client) => sum + (client.totalInvoiced || 0), 0) - clients.reduce((sum, client) => sum + (client.totalPaid || 0), 0)).toFixed(2)}</span>
+                    <span className="font-medium text-yellow-600">${invoiceStats.outstandingAmount.toFixed(2)}</span>
                   </div>
                   {invoiceStats.overdueAmount > 0 && (
                     <div className="flex justify-between">
