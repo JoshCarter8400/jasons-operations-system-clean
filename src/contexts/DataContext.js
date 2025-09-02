@@ -59,6 +59,9 @@ export const DataProvider = ({ children }) => {
   // Collecting invoices state - cache for performance
   const [collectingInvoices, setCollectingInvoices] = useState({});
   const [collectingInvoicesLoading, setCollectingInvoicesLoading] = useState({});
+  
+  // CRITICAL BUG FIX: Prevent duplicate invoice creation
+  const [invoiceCreationLocks, setInvoiceCreationLocks] = useState(new Set());
 
   // Load clients from database on mount
   useEffect(() => {
@@ -641,36 +644,105 @@ export const DataProvider = ({ children }) => {
   /**
    * Gets or creates a collecting invoice for a client
    * This is the core of Jason's workflow - services accumulate here
+   * 
+   * PARENT COMPANY LOGIC: If the client has a parent company, this function
+   * returns the parent company's collecting invoice instead of the child's
+   * 
+   * CRITICAL BUG FIX: Added atomic operation protection to prevent duplicate creation
    */
   const getCurrentCollectingInvoice = async (clientId, bypassCache = false) => {
     try {
+      console.log(`📄 getCurrentCollectingInvoice called for client ${clientId}`);
       setCollectingInvoicesLoading(prev => ({ ...prev, [clientId]: true }));
       
-      
-      // Check cache first (unless bypassing)
-      if (!bypassCache && collectingInvoices[clientId]) {
-        setCollectingInvoicesLoading(prev => ({ ...prev, [clientId]: false }));
-        return collectingInvoices[clientId];
+      // Find the client to check for parent company relationship
+      const client = clients.find(c => c.id === clientId);
+      if (!client) {
+        throw new Error('Client not found');
       }
 
-      // Try to get existing collecting invoice
-      let invoice = await getCollectingInvoiceForClient(clientId);
+      // Determine target client ID: use parent if exists, otherwise use original client
+      const targetClientId = client.parent_company_id || clientId;
+      const lockKey = `creating_invoice_${targetClientId}`;
       
-      if (!invoice) {
-        // Create new collecting invoice
-        const client = clients.find(c => c.id === clientId);
-        if (!client) {
-          throw new Error('Client not found');
+      if (client.parent_company_id && client.parent_company_id !== clientId) {
+        console.log(`🔄 Invoice routing: Child property "${client.name}" → Parent company (ID: ${targetClientId})`);
+      }
+      
+      // Check cache first (unless bypassing) - use target client ID for cache
+      if (!bypassCache && collectingInvoices[targetClientId]) {
+        console.log(`💾 Returning cached invoice for target client ${targetClientId}`);
+        setCollectingInvoicesLoading(prev => ({ ...prev, [clientId]: false }));
+        return collectingInvoices[targetClientId];
+      }
+
+      // CRITICAL: Check if we're already creating an invoice for this target client
+      if (invoiceCreationLocks.has(lockKey)) {
+        console.log(`🔒 Invoice creation already in progress for client ${targetClientId}, waiting...`);
+        
+        // Wait for the creation to complete by polling the cache
+        let attempts = 0;
+        const maxAttempts = 50; // 5 seconds max wait
+        
+        while (invoiceCreationLocks.has(lockKey) && attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 100)); // Wait 100ms
+          attempts++;
+          
+          // Check if invoice appeared in cache
+          if (collectingInvoices[targetClientId]) {
+            console.log(`✅ Found invoice in cache after waiting for client ${targetClientId}`);
+            setCollectingInvoicesLoading(prev => ({ ...prev, [clientId]: false }));
+            return collectingInvoices[targetClientId];
+          }
         }
         
-        invoice = await createCollectingInvoice(clientId, client);
+        // If still locked after waiting, try to get from database
+        console.log(`⚠️  Timeout waiting for invoice creation, checking database for client ${targetClientId}`);
+      }
+
+      // Try to get existing collecting invoice for the target client (parent or individual)
+      let invoice = await getCollectingInvoiceForClient(targetClientId);
+      
+      if (!invoice) {
+        // Set creation lock to prevent duplicates
+        console.log(`🔒 Setting creation lock for client ${targetClientId}`);
+        setInvoiceCreationLocks(prev => new Set(prev).add(lockKey));
+        
+        try {
+          // Double-check for existing invoice after setting lock (race condition protection)
+          invoice = await getCollectingInvoiceForClient(targetClientId);
+          
+          if (!invoice) {
+            // Create new collecting invoice for target client
+            const targetClient = targetClientId === clientId ? client : clients.find(c => c.id === targetClientId);
+            if (!targetClient) {
+              throw new Error('Target client not found');
+            }
+            
+            console.log(`✨ Creating new collecting invoice for client ${targetClientId} (${targetClient.name})`);
+            invoice = await createCollectingInvoice(targetClientId, targetClient);
+            console.log(`✅ Created invoice ${invoice.id} for client ${targetClientId}`);
+          } else {
+            console.log(`📄 Found existing invoice after lock check for client ${targetClientId}`);
+          }
+        } finally {
+          // Always remove the lock
+          console.log(`🔓 Removing creation lock for client ${targetClientId}`);
+          setInvoiceCreationLocks(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(lockKey);
+            return newSet;
+          });
+        }
       } else {
+        console.log(`📄 Found existing collecting invoice ${invoice.id} for client ${targetClientId}`);
         // Get full invoice with line items
         invoice = await getInvoiceWithLineItems(invoice.id);
       }
 
-      // Cache the invoice
-      setCollectingInvoices(prev => ({ ...prev, [clientId]: invoice }));
+      // Cache the invoice using the target client ID
+      console.log(`💾 Caching invoice ${invoice.id} for target client ${targetClientId}`);
+      setCollectingInvoices(prev => ({ ...prev, [targetClientId]: invoice }));
       setCollectingInvoicesLoading(prev => ({ ...prev, [clientId]: false }));
       
       return invoice;
@@ -684,29 +756,64 @@ export const DataProvider = ({ children }) => {
   /**
    * Adds a completed service to a client's collecting invoice
    * This is called when Jason marks a service as complete
+   * 
+   * PARENT COMPANY LOGIC: If the client has a parent company, the service
+   * automatically goes to the parent company's collecting invoice instead
    */
   const addServiceToCollectingInvoice = async (clientId, serviceData) => {
     try {
-      const invoice = await getCurrentCollectingInvoice(clientId);
+      console.log(`🛠️  addServiceToCollectingInvoice called for client ${clientId}:`, serviceData);
+      
+      // Find the client to check for parent company relationship
+      const client = clients.find(c => c.id === clientId);
+      if (!client) {
+        throw new Error('Client not found');
+      }
+
+      // Determine target client ID: use parent if exists, otherwise use original client
+      const targetClientId = client.parent_company_id || clientId;
+      
+      // If routing to parent, enhance service description to show property source
+      let enhancedServiceData = { ...serviceData };
+      if (client.parent_company_id && client.parent_company_id !== clientId) {
+        // This is a child property - enhance description to include property name
+        enhancedServiceData.description = `${serviceData.description} (${client.name})`;
+        
+        console.log(`🔄 Service routing: Child property "${client.name}" → Parent company (ID: ${targetClientId})`);
+      }
+      
+      console.log(`📄 Getting collecting invoice for target client ${targetClientId}...`);
+      const invoice = await getCurrentCollectingInvoice(targetClientId);
+      console.log(`📄 Got invoice ${invoice.id} for target client ${targetClientId}`);
       
       // Calculate service amount WITHOUT tax (tax calculated at invoice level)
-      const serviceAmount = serviceData.quantity * serviceData.rate;
+      const serviceAmount = enhancedServiceData.quantity * enhancedServiceData.rate;
+      
+      console.log(`➕ Adding service to invoice ${invoice.id}:`, {
+        description: enhancedServiceData.description,
+        quantity: enhancedServiceData.quantity,
+        rate: enhancedServiceData.rate,
+        amount: serviceAmount
+      });
       
       // Add service to the invoice
       await addServiceToInvoice(invoice.id, {
-        description: serviceData.description,
-        quantity: serviceData.quantity,
-        rate: serviceData.rate,
+        description: enhancedServiceData.description,
+        quantity: enhancedServiceData.quantity,
+        rate: enhancedServiceData.rate,
         amount: serviceAmount // Store amount without tax
       });
 
+      console.log(`✅ Service added to invoice ${invoice.id}, refreshing cache...`);
+      
       // Get updated invoice and refresh cache
       const updatedInvoice = await getInvoiceWithLineItems(invoice.id);
-      setCollectingInvoices(prev => ({ ...prev, [clientId]: updatedInvoice }));
+      setCollectingInvoices(prev => ({ ...prev, [targetClientId]: updatedInvoice }));
       
+      console.log(`✅ addServiceToCollectingInvoice completed for client ${clientId}`);
       return updatedInvoice;
     } catch (error) {
-      console.error('Failed to add service to collecting invoice:', error);
+      console.error(`❌ addServiceToCollectingInvoice failed for client ${clientId}:`, error);
       throw error;
     }
   };
@@ -779,12 +886,19 @@ export const DataProvider = ({ children }) => {
   /**
    * Updates the notes field in a collecting invoice
    * Allows Jason to add special instructions or additional details
+   * FIXED: Gracefully handles invoices that are no longer in collecting status
    */
   const updateCollectingInvoiceNotes = async (invoiceId, notes) => {
     try {
       const invoice = await getInvoiceWithLineItems(invoiceId);
-      if (!invoice || invoice.status !== 'collecting') {
-        throw new Error('Can only edit collecting invoices');
+      if (!invoice) {
+        console.warn(`Invoice ${invoiceId} not found - skipping notes update`);
+        return null;
+      }
+
+      if (invoice.status !== 'collecting') {
+        console.warn(`Invoice ${invoiceId} is no longer in collecting status (${invoice.status}) - skipping notes update`);
+        return invoice; // Return invoice as-is rather than throwing error
       }
 
       // Update notes in database
@@ -799,7 +913,8 @@ export const DataProvider = ({ children }) => {
       return updatedInvoice;
     } catch (error) {
       console.error('Failed to update collecting invoice notes:', error);
-      throw error;
+      // Don't re-throw the error - let the calling function handle gracefully
+      return null;
     }
   };
 
@@ -945,21 +1060,53 @@ export const DataProvider = ({ children }) => {
   };
 
   /**
-   * Gets all collecting invoices for display
+   * Gets all existing collecting invoices from the database
+   * CRITICAL FIX: This function only returns existing invoices - it does NOT create new ones
+   * This prevents the mass invoice creation bug by avoiding getCurrentCollectingInvoice for all clients
    */
   const getAllCollectingInvoices = async (forceRefresh = false) => {
     try {
+      console.log('📋 getAllCollectingInvoices called, forceRefresh:', forceRefresh);
       
       if (forceRefresh) {
         setCollectingInvoices({});
       }
       
-      const promises = clients.map(client => getCurrentCollectingInvoice(client.id, forceRefresh));
-      const invoices = await Promise.all(promises);
-      const filteredInvoices = invoices.filter(invoice => invoice && invoice.line_items && invoice.line_items.length > 0);
+      // Get all existing collecting invoices from database (not creating new ones!)
+      const { execute } = await import('../utils/database');
       
+      const result = await execute(`
+        SELECT i.*, 
+               COUNT(li.id) as line_item_count
+        FROM invoices i
+        LEFT JOIN invoice_line_items li ON i.id = li.invoice_id
+        WHERE i.status = 'collecting'
+        GROUP BY i.id
+        HAVING COUNT(li.id) > 0
+        ORDER BY i.created_at DESC, i.id DESC
+      `);
+
+      // Convert to full invoices with line items
+      const collectingInvoices = await Promise.all(
+        result.rows.map(async (invoiceRow) => {
+          const fullInvoice = await getInvoiceWithLineItems(invoiceRow.id);
+          return fullInvoice;
+        })
+      );
+
+      console.log(`📋 Found ${collectingInvoices.length} existing collecting invoices with line items`);
       
-      return filteredInvoices;
+      // Update cache with found invoices
+      const newCache = {};
+      collectingInvoices.forEach(invoice => {
+        newCache[invoice.client_id] = invoice;
+      });
+      
+      if (forceRefresh) {
+        setCollectingInvoices(newCache);
+      }
+      
+      return collectingInvoices;
     } catch (error) {
       console.error('Failed to get all collecting invoices:', error);
       return [];

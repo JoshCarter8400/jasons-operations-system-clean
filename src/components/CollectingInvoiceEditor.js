@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useData } from '../contexts/DataContext';
 // import { formatDate } from '../utils/dateUtils'; // Not currently used
 import { InvoiceStatusBadge } from './InvoiceStatusBadge';
+import PropertyGroupedInvoiceDisplay from './PropertyGroupedInvoiceDisplay';
+import { shouldUsePropertyGrouping } from '../utils/propertyGrouping';
 
 function CollectingInvoiceEditor() {
   const { 
@@ -174,11 +176,20 @@ function CollectingInvoiceEditor() {
     try {
       setUpdatingNotes(true);
       
-      await updateCollectingInvoiceNotes(invoice.id, invoice.notes || '');
+      const result = await updateCollectingInvoiceNotes(invoice.id, invoice.notes || '');
+      
+      // Check if the update was successful or gracefully skipped
+      if (result === null) {
+        console.warn('Notes update was skipped - invoice may no longer be in collecting status');
+        return; // Gracefully continue without error
+      }
       
     } catch (error) {
       console.error('❌ Failed to save notes:', error);
-      alert('Failed to save notes. Please try again.');
+      // Only show alert for unexpected errors, not status change issues
+      if (!error.message.includes('collecting')) {
+        alert('Failed to save notes. Please try again.');
+      }
     } finally {
       setUpdatingNotes(false);
     }
@@ -190,6 +201,8 @@ function CollectingInvoiceEditor() {
       return;
     }
 
+    if (sending) return; // Prevent multiple simultaneous sends
+
     const confirmed = window.confirm(
       `Send invoice to ${client.name}? This will finalize the invoice and create a new collecting invoice.`
     );
@@ -199,10 +212,14 @@ function CollectingInvoiceEditor() {
     try {
       setSending(true);
       
-      // Save notes before sending
+      // Save notes before sending (this now handles status changes gracefully)
+      console.log('Saving notes before sending invoice...');
       await saveNotesToDatabase();
       
+      console.log('Sending invoice...');
       await sendCollectingInvoiceToClient(invoice.id);
+      
+      console.log('Invoice sent successfully, navigating...');
       navigate('/invoicing');
     } catch (error) {
       console.error('Failed to send invoice:', error);
@@ -214,13 +231,15 @@ function CollectingInvoiceEditor() {
 
   const handleSaveAndClose = async () => {
     try {
-      // Save notes before navigating
+      // Save notes before navigating (gracefully handles status changes)
+      console.log('Saving notes before closing...');
       await saveNotesToDatabase();
+      console.log('Notes saved, navigating...');
       navigate('/invoicing');
     } catch (error) {
       console.error('Failed to save before closing:', error);
-      // Navigate anyway, but warn user
-      alert('There was an issue saving your changes, but navigating anyway.');
+      // Navigate anyway since notes are not critical for navigation
+      console.log('Navigating despite save error...');
       navigate('/invoicing');
     }
   };
@@ -351,126 +370,145 @@ function CollectingInvoiceEditor() {
 
           {/* Services List */}
           <div className="mb-6">
-            <h3 className="font-semibold text-lg mb-4">Services</h3>
+            <h3 className="font-semibold text-lg mb-4">
+              {shouldUsePropertyGrouping(client, invoice.line_items) ? 'Services by Property' : 'Services'}
+            </h3>
             
-            {invoice.line_items && invoice.line_items.length > 0 ? (
-              <div className="space-y-4">
-                {invoice.line_items.map((lineItem) => (
-                  <div key={lineItem.id} className="border border-gray-200 rounded-md p-4">
-                    {editing[lineItem.id] === 'editing' ? (
-                      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                        <div className="md:col-span-4">
-                          <label className="block text-sm font-medium mb-2">Service Description *</label>
-                          <select
-                            required
-                            value={editService.description}
-                            onChange={(e) => setEditService({...editService, description: e.target.value})}
-                            className="w-full p-3 border border-gray-300 rounded-md"
-                          >
-                            <option value="">Select a service...</option>
-                            {services.map(s => (
-                              <option key={s.name} value={s.name}>{s.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="md:col-span-2">
-                          <label className="block text-sm font-medium mb-2">Qty</label>
-                          <input
-                            type="text"
-                            required
-                            value={editService.quantity}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              // Only allow whole numbers or empty
-                              if (value === '' || /^\d+$/.test(value)) {
-                                setEditService({...editService, quantity: value === '' ? '' : parseInt(value)});
-                              }
-                            }}
-                            onKeyDown={(e) => {
-                              // Allow backspace, delete, arrow keys, tab
-                              if (['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.key)) {
-                                return;
-                              }
-                              // Only allow digits
-                              if (!/^\d$/.test(e.key)) {
-                                e.preventDefault();
-                              }
-                            }}
-                            className="w-full p-3 border border-gray-300 rounded-md"
-                            placeholder=""
-                          />
-                        </div>
-                        <div className="md:col-span-2">
-                          <label className="block text-sm font-medium mb-2">Rate</label>
-                          <input
-                            type="text"
-                            value={editService.rate}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              if (value === '' || /^\d*\.?\d*$/.test(value)) {
-                                setEditService({...editService, rate: parseFloat(value) || 0});
-                              }
-                            }}
-                            onFocus={(e) => e.target.select()}
-                            className="w-full p-3 border border-gray-300 rounded-md"
-                            placeholder="0.00"
-                          />
-                        </div>
-                        <div className="md:col-span-2">
-                          <div className="p-3 bg-gray-50 border border-gray-300 rounded-md">
-                            <strong>${((editService.quantity || 0) * (editService.rate || 0)).toFixed(2)}</strong>
+            {shouldUsePropertyGrouping(client, invoice.line_items) ? (
+              /* Property-Grouped Display for Parent Companies */
+              <PropertyGroupedInvoiceDisplay
+                lineItems={invoice.line_items}
+                editing={editing}
+                editService={editService}
+                services={services}
+                removing={removing}
+                setEditService={setEditService}
+                handleEditService={handleEditService}
+                cancelEditing={cancelEditing}
+                startEditingService={startEditingService}
+                handleRemoveService={handleRemoveService}
+              />
+            ) : (
+              /* Standard Flat Display for Individual Clients */
+              invoice.line_items && invoice.line_items.length > 0 ? (
+                <div className="space-y-4">
+                  {invoice.line_items.map((lineItem) => (
+                    <div key={lineItem.id} className="border border-gray-200 rounded-md p-4">
+                      {editing[lineItem.id] === 'editing' ? (
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                          <div className="md:col-span-4">
+                            <label className="block text-sm font-medium mb-2">Service Description *</label>
+                            <select
+                              required
+                              value={editService.description}
+                              onChange={(e) => setEditService({...editService, description: e.target.value})}
+                              className="w-full p-3 border border-gray-300 rounded-md"
+                            >
+                              <option value="">Select a service...</option>
+                              {services.map(s => (
+                                <option key={s.name} value={s.name}>{s.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="block text-sm font-medium mb-2">Qty</label>
+                            <input
+                              type="text"
+                              required
+                              value={editService.quantity}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                // Only allow whole numbers or empty
+                                if (value === '' || /^\d+$/.test(value)) {
+                                  setEditService({...editService, quantity: value === '' ? '' : parseInt(value)});
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                // Allow backspace, delete, arrow keys, tab
+                                if (['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.key)) {
+                                  return;
+                                }
+                                // Only allow digits
+                                if (!/^\d$/.test(e.key)) {
+                                  e.preventDefault();
+                                }
+                              }}
+                              className="w-full p-3 border border-gray-300 rounded-md"
+                              placeholder=""
+                            />
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="block text-sm font-medium mb-2">Rate</label>
+                            <input
+                              type="text"
+                              value={editService.rate}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                                  setEditService({...editService, rate: parseFloat(value) || 0});
+                                }
+                              }}
+                              onFocus={(e) => e.target.select()}
+                              className="w-full p-3 border border-gray-300 rounded-md"
+                              placeholder="0.00"
+                            />
+                          </div>
+                          <div className="md:col-span-2">
+                            <div className="p-3 bg-gray-50 border border-gray-300 rounded-md">
+                              <strong>${((editService.quantity || 0) * (editService.rate || 0)).toFixed(2)}</strong>
+                            </div>
+                          </div>
+                          <div className="md:col-span-2">
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleEditService(lineItem.id)}
+                                disabled={editing[lineItem.id] === true}
+                                className="btn btn-primary btn-sm"
+                              >
+                                {editing[lineItem.id] === true ? '⏳' : '✓'}
+                              </button>
+                              <button
+                                onClick={() => cancelEditing()}
+                                className="btn btn-outline btn-sm"
+                              >
+                                ✗
+                              </button>
+                            </div>
                           </div>
                         </div>
-                        <div className="md:col-span-2">
+                      ) : (
+                        <div className="flex justify-between items-center">
+                          <div className="flex-1">
+                            <h4 className="font-medium">{lineItem.description}</h4>
+                            <p className="text-sm text-gray-600">
+                              Qty: {lineItem.quantity} × ${lineItem.rate.toFixed(2)} = ${(lineItem.quantity * lineItem.rate).toFixed(2)}
+                            </p>
+                          </div>
                           <div className="flex gap-2">
                             <button
-                              onClick={() => handleEditService(lineItem.id)}
-                              disabled={editing[lineItem.id] === true}
-                              className="btn btn-primary btn-sm"
-                            >
-                              {editing[lineItem.id] === true ? '⏳' : '✓'}
-                            </button>
-                            <button
-                              onClick={() => cancelEditing()}
+                              onClick={() => startEditingService(lineItem)}
                               className="btn btn-outline btn-sm"
                             >
-                              ✗
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleRemoveService(lineItem.id, lineItem.description)}
+                              disabled={removing[lineItem.id]}
+                              className="btn btn-danger btn-sm"
+                            >
+                              {removing[lineItem.id] ? '⏳ Removing...' : 'Remove'}
                             </button>
                           </div>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="flex justify-between items-center">
-                        <div className="flex-1">
-                          <h4 className="font-medium">{lineItem.description}</h4>
-                          <p className="text-sm text-gray-600">
-                            Qty: {lineItem.quantity} × ${lineItem.rate.toFixed(2)} = ${(lineItem.quantity * lineItem.rate).toFixed(2)}
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => startEditingService(lineItem)}
-                            className="btn btn-outline btn-sm"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleRemoveService(lineItem.id, lineItem.description)}
-                            disabled={removing[lineItem.id]}
-                            className="btn btn-danger btn-sm"
-                          >
-                            {removing[lineItem.id] ? '⏳ Removing...' : 'Remove'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                No services added yet. Add your first service below.
-              </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  No services added yet. Add your first service below.
+                </div>
+              )
             )}
           </div>
 

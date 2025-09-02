@@ -27,7 +27,7 @@ export async function getDatabaseClients() {
     // Create database client
     const db = createLibSQLClient(config);
 
-    // Select all clients with all fields including new recurring schedule fields
+    // Select all clients with all fields including new recurring schedule and multi-property fields
     const result = await db.execute(`
       SELECT 
         id,
@@ -55,9 +55,17 @@ export async function getDatabaseClients() {
         recurring_time,
         week_pattern,
         recurring_active,
-        next_service_date
+        next_service_date,
+        parent_company_id,
+        client_type
       FROM clients 
-      ORDER BY name
+      ORDER BY 
+        CASE 
+          WHEN client_type = 'parent' THEN 1
+          WHEN client_type = 'child' THEN 2  
+          ELSE 3
+        END,
+        name
     `);
 
     
@@ -89,7 +97,10 @@ export async function getDatabaseClients() {
       recurring_time: row.recurring_time,
       week_pattern: row.week_pattern,
       recurring_active: Boolean(row.recurring_active),
-      next_service_date: row.next_service_date
+      next_service_date: row.next_service_date,
+      // Multi-property client fields
+      parent_company_id: row.parent_company_id,
+      client_type: row.client_type || 'individual'
     }));
 
 
@@ -1823,4 +1834,388 @@ if (typeof window !== 'undefined') {
   };
   
   console.log('🔧 Database helper functions available globally');
+}
+
+// ============================================================================
+// MULTI-PROPERTY CLIENT OPERATIONS
+// ============================================================================
+
+/**
+ * Link a client to a parent company
+ * @param {number} clientId - Client ID to link
+ * @param {number} parentId - Parent company ID
+ * @returns {Promise<boolean>} Success status
+ */
+export async function linkClientToParent(clientId, parentId) {
+  try {
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    const db = createLibSQLClient(config);
+
+    // Verify parent exists and is actually a parent type
+    const parentCheck = await db.execute({
+      sql: `SELECT id, client_type FROM clients WHERE id = ?`,
+      args: [parentId]
+    });
+
+    if (parentCheck.rows.length === 0) {
+      throw new Error('Parent company not found');
+    }
+
+    const parentRow = parentCheck.rows[0];
+    if (parentRow.client_type !== 'parent') {
+      throw new Error('Selected client is not a parent company');
+    }
+
+    // Update the client to link to parent
+    const result = await db.execute({
+      sql: `UPDATE clients SET 
+              parent_company_id = ?, 
+              client_type = 'child',
+              updated_at = CURRENT_TIMESTAMP 
+            WHERE id = ?`,
+      args: [parentId, clientId]
+    });
+
+    return result.rowsAffected > 0;
+
+  } catch (error) {
+    console.error('❌ Error linking client to parent:', error);
+    throw error;
+  }
+}
+
+/**
+ * Unlink a client from its parent company
+ * @param {number} clientId - Client ID to unlink
+ * @returns {Promise<boolean>} Success status
+ */
+export async function unlinkClientFromParent(clientId) {
+  try {
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    const db = createLibSQLClient(config);
+
+    // Update the client to remove parent link
+    const result = await db.execute({
+      sql: `UPDATE clients SET 
+              parent_company_id = NULL, 
+              client_type = 'individual',
+              updated_at = CURRENT_TIMESTAMP 
+            WHERE id = ?`,
+      args: [clientId]
+    });
+
+    return result.rowsAffected > 0;
+
+  } catch (error) {
+    console.error('❌ Error unlinking client from parent:', error);
+    throw error;
+  }
+}
+
+/**
+ * Convert an individual client to a parent company
+ * @param {number} clientId - Client ID to convert
+ * @returns {Promise<boolean>} Success status
+ */
+export async function convertClientToParent(clientId) {
+  try {
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    const db = createLibSQLClient(config);
+
+    // Verify client exists and is not already a parent
+    const clientCheck = await db.execute({
+      sql: `SELECT id, client_type FROM clients WHERE id = ?`,
+      args: [clientId]
+    });
+
+    if (clientCheck.rows.length === 0) {
+      throw new Error('Client not found');
+    }
+
+    const clientRow = clientCheck.rows[0];
+    if (clientRow.client_type === 'parent') {
+      throw new Error('Client is already a parent company');
+    }
+
+    if (clientRow.client_type === 'child') {
+      throw new Error('Cannot convert child property to parent. Unlink first.');
+    }
+
+    // Update the client to be a parent
+    const result = await db.execute({
+      sql: `UPDATE clients SET 
+              client_type = 'parent',
+              updated_at = CURRENT_TIMESTAMP 
+            WHERE id = ?`,
+      args: [clientId]
+    });
+
+    return result.rowsAffected > 0;
+
+  } catch (error) {
+    console.error('❌ Error converting client to parent:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get all child properties for a parent company
+ * @param {number} parentId - Parent company ID
+ * @returns {Promise<Array>} Array of child client objects
+ */
+export async function getChildPropertiesForParent(parentId) {
+  try {
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    const db = createLibSQLClient(config);
+
+    const result = await db.execute({
+      sql: `SELECT * FROM clients 
+            WHERE parent_company_id = ? AND client_type = 'child'
+            ORDER BY name`,
+      args: [parentId]
+    });
+
+    // Convert database rows to client objects (same format as getDatabaseClients)
+    return result.rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      address: row.address,
+      area: row.area,
+      phone: row.phone,
+      email: row.email,
+      service_type: row.service_type,
+      services: row.services,
+      price: row.price,
+      payment_method: row.payment_method,
+      notes: row.notes,
+      status: row.status,
+      last_service: row.last_service,
+      next_service: row.next_service,
+      created_date: row.created_date,
+      total_invoiced: row.total_invoiced,
+      total_paid: row.total_paid,
+      last_scheduled: row.last_scheduled,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      recurring_frequency: row.recurring_frequency,
+      recurring_day: row.recurring_day,
+      recurring_time: row.recurring_time,
+      week_pattern: row.week_pattern,
+      recurring_active: Boolean(row.recurring_active),
+      next_service_date: row.next_service_date,
+      parent_company_id: row.parent_company_id,
+      client_type: row.client_type || 'individual'
+    }));
+
+  } catch (error) {
+    console.error('❌ Error getting child properties:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get parent company information for a child property
+ * @param {number} childId - Child client ID
+ * @returns {Promise<Object|null>} Parent company object or null
+ */
+export async function getParentCompanyForChild(childId) {
+  try {
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    const db = createLibSQLClient(config);
+
+    const result = await db.execute({
+      sql: `SELECT p.* FROM clients p
+            JOIN clients c ON p.id = c.parent_company_id
+            WHERE c.id = ? AND c.client_type = 'child' AND p.client_type = 'parent'`,
+      args: [childId]
+    });
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      name: row.name,
+      address: row.address,
+      area: row.area,
+      phone: row.phone,
+      email: row.email,
+      service_type: row.service_type,
+      services: row.services,
+      price: row.price,
+      payment_method: row.payment_method,
+      notes: row.notes,
+      status: row.status,
+      last_service: row.last_service,
+      next_service: row.next_service,
+      created_date: row.created_date,
+      total_invoiced: row.total_invoiced,
+      total_paid: row.total_paid,
+      last_scheduled: row.last_scheduled,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      recurring_frequency: row.recurring_frequency,
+      recurring_day: row.recurring_day,
+      recurring_time: row.recurring_time,
+      week_pattern: row.week_pattern,
+      recurring_active: Boolean(row.recurring_active),
+      next_service_date: row.next_service_date,
+      parent_company_id: row.parent_company_id,
+      client_type: row.client_type || 'individual'
+    };
+
+  } catch (error) {
+    console.error('❌ Error getting parent company for child:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get all parent companies (for dropdowns)
+ * @returns {Promise<Array>} Array of parent company objects
+ */
+export async function getAllParentCompanies() {
+  try {
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    const db = createLibSQLClient(config);
+
+    const result = await db.execute({
+      sql: `SELECT id, name, email FROM clients 
+            WHERE client_type = 'parent' AND status = 'Active'
+            ORDER BY name`,
+      args: []
+    });
+
+    return result.rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      email: row.email
+    }));
+
+  } catch (error) {
+    console.error('❌ Error getting parent companies:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get parent company with child count for display
+ * @param {number} parentId - Parent company ID
+ * @returns {Promise<Object|null>} Parent company with child count
+ */
+export async function getParentCompanyWithChildCount(parentId) {
+  try {
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    const db = createLibSQLClient(config);
+
+    const result = await db.execute({
+      sql: `SELECT 
+              p.id,
+              p.name,
+              p.email,
+              p.client_type,
+              COUNT(c.id) as child_count
+            FROM clients p
+            LEFT JOIN clients c ON p.id = c.parent_company_id AND c.client_type = 'child'
+            WHERE p.id = ? AND p.client_type = 'parent'
+            GROUP BY p.id, p.name, p.email, p.client_type`,
+      args: [parentId]
+    });
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      client_type: row.client_type,
+      child_count: row.child_count
+    };
+
+  } catch (error) {
+    console.error('❌ Error getting parent company with child count:', error);
+    throw error;
+  }
+}
+
+/**
+ * Convert a parent company back to individual client
+ * @param {number} clientId - Parent company ID to convert
+ * @returns {Promise<boolean>} Success status
+ */
+export async function convertParentToIndividual(clientId) {
+  try {
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    const db = createLibSQLClient(config);
+
+    // Verify client exists and is a parent
+    const clientCheck = await db.execute({
+      sql: `SELECT id, client_type FROM clients WHERE id = ?`,
+      args: [clientId]
+    });
+
+    if (clientCheck.rows.length === 0) {
+      throw new Error('Client not found');
+    }
+
+    const clientRow = clientCheck.rows[0];
+    if (clientRow.client_type !== 'parent') {
+      throw new Error('Client is not a parent company');
+    }
+
+    // Check if parent has any child properties
+    const childrenCheck = await db.execute({
+      sql: `SELECT COUNT(*) as count FROM clients WHERE parent_company_id = ? AND client_type = 'child'`,
+      args: [clientId]
+    });
+
+    const childCount = childrenCheck.rows[0].count;
+    if (childCount > 0) {
+      throw new Error(`Cannot convert parent company back to individual. It still has ${childCount} linked properties. Please unlink all child properties first.`);
+    }
+
+    // Update the client to be individual
+    const result = await db.execute({
+      sql: `UPDATE clients SET 
+              client_type = 'individual',
+              updated_at = CURRENT_TIMESTAMP 
+            WHERE id = ?`,
+      args: [clientId]
+    });
+
+    return result.rowsAffected > 0;
+
+  } catch (error) {
+    console.error('❌ Error converting parent to individual:', error);
+    throw error;
+  }
 }

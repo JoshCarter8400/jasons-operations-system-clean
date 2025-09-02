@@ -1,24 +1,127 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Routes, Route, Link, useNavigate, useParams } from 'react-router-dom';
 import { useData } from '../contexts/DataContext';
 import { formatDate } from '../utils/dateUtils';
-import { generateRecurringAppointmentsForClient } from '../utils/databaseHelpers';
+import { 
+  generateRecurringAppointmentsForClient,
+  getAllParentCompanies,
+  getParentCompanyForChild,
+  getChildPropertiesForParent
+} from '../utils/databaseHelpers';
+import ClientTypeIcon from './ClientTypeIcon';
+import MultiPropertyControls from './MultiPropertyControls';
+import ParentCompanyDetails from './ParentCompanyDetails';
 
 
 function ClientList() {
-  const { searchClients, clientsLoading, deleteClient, getAllDatabaseInvoices } = useData();
+  const { searchClients, clientsLoading, deleteClient, getAllDatabaseInvoices, refreshClients } = useData();
   const [searchTerm, setSearchTerm] = useState('');
+  const [parentCompanyInfo, setParentCompanyInfo] = useState({});
+  const [childCounts, setChildCounts] = useState({});
+  const [showMultiPropertyControls, setShowMultiPropertyControls] = useState(null);
+  const [expandedParentDetails, setExpandedParentDetails] = useState({});
+  const [parentCompanies, setParentCompanies] = useState([]);
   const navigate = useNavigate();
 
+  // Load parent company information and child counts
+  useEffect(() => {
+    const loadParentChildInfo = async () => {
+      try {
+        const filteredClients = searchClients(searchTerm);
+        const parentInfo = {};
+        const childCountsData = {};
+
+        // Load parent companies for dropdowns
+        const allParents = await getAllParentCompanies();
+        setParentCompanies(allParents);
+
+        // For each client, load parent info if it's a child
+        for (const client of filteredClients) {
+          if (client.client_type === 'child' && client.parent_company_id) {
+            try {
+              const parent = await getParentCompanyForChild(client.id);
+              if (parent) {
+                parentInfo[client.id] = parent;
+              }
+            } catch (error) {
+              console.error(`Failed to load parent for client ${client.id}:`, error);
+            }
+          }
+
+          // For parent companies, load child counts
+          if (client.client_type === 'parent') {
+            try {
+              const children = await getChildPropertiesForParent(client.id);
+              childCountsData[client.id] = children.length;
+            } catch (error) {
+              console.error(`Failed to load children for parent ${client.id}:`, error);
+            }
+          }
+        }
+
+        setParentCompanyInfo(parentInfo);
+        setChildCounts(childCountsData);
+      } catch (error) {
+        console.error('Failed to load parent/child information:', error);
+      }
+    };
+
+    if (!clientsLoading) {
+      loadParentChildInfo();
+    }
+  }, [searchClients, searchTerm, clientsLoading]);
+
+  const handleClientUpdated = async () => {
+    await refreshClients();
+    setShowMultiPropertyControls(null);
+  };
+
+  const handleToggleParentDetails = (clientId, isExpanded) => {
+    setExpandedParentDetails(prev => ({
+      ...prev,
+      [clientId]: isExpanded
+    }));
+  };
+
   const handleDelete = async (client) => {
+    // Check if this is a parent company with children
+    if (client.client_type === 'parent') {
+      const childCount = childCounts[client.id] || 0;
+      
+      if (childCount > 0) {
+        alert(`❌ Cannot delete parent company with linked properties.
+
+"${client.name}" has ${childCount} linked child ${childCount === 1 ? 'property' : 'properties'}.
+
+Please unlink all child properties first by:
+1. Click "Manage" on this parent company
+2. Go to each child property and use "Unlink from Parent"
+3. Then try deleting again
+
+This protects your data from accidental relationship breakage.`);
+        return;
+      }
+    }
+
     // Get invoice count for this client to show in confirmation
     const allInvoices = await getAllDatabaseInvoices();
     const clientInvoices = allInvoices.filter(invoice => invoice.client_id === client.id);
     
-    const confirmMessage = `⚠️ DELETE CLIENT CONFIRMATION ⚠️
+    let confirmMessage = `⚠️ DELETE CLIENT CONFIRMATION ⚠️
 
 This will permanently delete:
-• Client: ${client.name}
+• Client: ${client.name}`;
+
+    if (client.client_type === 'parent') {
+      confirmMessage += `\n• Parent company status (no linked properties)`;
+    } else if (client.client_type === 'child') {
+      const parentCompany = parentCompanyInfo[client.id];
+      if (parentCompany) {
+        confirmMessage += `\n• Link to parent company: ${parentCompany.name}`;
+      }
+    }
+
+    confirmMessage += `
 • ${clientInvoices.length} invoice(s) associated with this client
 • All service line items from those invoices
 
@@ -79,52 +182,114 @@ Are you sure you want to proceed?`;
           </div>
           
           <div className="grid gap-4">
-            {filteredClients.map((client) => (
-              <div key={client.id} className="card">
-                <div className="card-content">
-                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-lg mb-2">{client.name}</h3>
-                      <p className="text-gray-600 mb-1">{client.address}</p>
-                      <p className="text-gray-600 mb-1">{client.phone}</p>
-                      <p className="text-gray-600 mb-2">{client.email}</p>
-                      <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 text-sm">
-                        <span><strong>Service:</strong> {client.serviceType}</span>
-                        <span><strong>Last:</strong> {formatDate(client.lastService)}</span>
-                        <span><strong>Next:</strong> {formatDate(client.nextService)}</span>
+            {filteredClients.map((client) => {
+              const parentCompany = parentCompanyInfo[client.id];
+              const childCount = childCounts[client.id] || 0;
+              const isParentWithChildren = client.client_type === 'parent' && childCount > 0;
+              
+              return (
+                <div key={client.id} className="card">
+                  <div className="card-content">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+                      <div className="flex-1 min-w-0">
+                        {/* Client name with type icon */}
+                        <div className="flex items-center gap-3 mb-3">
+                          <ClientTypeIcon 
+                            clientType={client.client_type || 'individual'}
+                            parentName={parentCompany?.name}
+                            childCount={childCount}
+                            showLabel={true}
+                            showParentInfo={true}
+                            size="md"
+                          />
+                        </div>
+                        
+                        <h3 className="font-semibold text-lg mb-2">{client.name}</h3>
+                        <p className="text-gray-600 mb-1">{client.address}</p>
+                        <p className="text-gray-600 mb-1">{client.phone}</p>
+                        <p className="text-gray-600 mb-2">{client.email}</p>
+                        <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 text-sm">
+                          <span><strong>Service:</strong> {client.serviceType}</span>
+                          <span><strong>Last:</strong> {formatDate(client.lastService)}</span>
+                          <span><strong>Next:</strong> {formatDate(client.nextService)}</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2 sm:items-end">
+                        <span className={`px-2 py-1 rounded-full text-xs ${
+                          client.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {client.status}
+                        </span>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <button
+                            onClick={() => navigate(`/clients/${client.id}`)}
+                            className="btn btn-outline w-full sm:w-auto min-h-[44px] py-3 px-4 text-base sm:text-lg"
+                          >
+                            View
+                          </button>
+                          <button
+                            onClick={() => navigate(`/clients/${client.id}/edit`)}
+                            className="btn btn-primary w-full sm:w-auto min-h-[44px] py-3 px-4 text-base sm:text-lg"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => setShowMultiPropertyControls(client.id)}
+                            className="btn btn-secondary w-full sm:w-auto min-h-[44px] py-3 px-4 text-base sm:text-lg"
+                          >
+                            Manage
+                          </button>
+                          
+                          {/* Protected Delete Button */}
+                          {isParentWithChildren ? (
+                            <div className="relative group">
+                              <button
+                                disabled={true}
+                                className="btn btn-outline w-full sm:w-auto min-h-[44px] py-3 px-4 text-base sm:text-lg text-gray-400 border-gray-300 cursor-not-allowed opacity-50"
+                                title={`Cannot delete parent company with ${childCount} linked properties`}
+                              >
+                                🔒 Protected
+                              </button>
+                              {/* Tooltip */}
+                              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10 whitespace-nowrap">
+                                Has {childCount} linked {childCount === 1 ? 'property' : 'properties'} - unlink first
+                                <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-800"></div>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleDelete(client)}
+                              className="btn btn-outline w-full sm:w-auto min-h-[44px] py-3 px-4 text-base sm:text-lg text-red-600 border-red-600 hover:bg-red-600 hover:text-white"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    <div className="flex flex-col gap-2 sm:items-end">
-                      <span className={`px-2 py-1 rounded-full text-xs ${
-                        client.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {client.status}
-                      </span>
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <button
-                          onClick={() => navigate(`/clients/${client.id}`)}
-                          className="btn btn-outline w-full sm:w-auto min-h-[44px] py-3 px-4 text-base sm:text-lg"
-                        >
-                          View
-                        </button>
-                        <button
-                          onClick={() => navigate(`/clients/${client.id}/edit`)}
-                          className="btn btn-primary w-full sm:w-auto min-h-[44px] py-3 px-4 text-base sm:text-lg"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(client)}
-                          className="btn btn-outline w-full sm:w-auto min-h-[44px] py-3 px-4 text-base sm:text-lg text-red-600 border-red-600 hover:bg-red-600 hover:text-white"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
+                    
+                    {/* Parent Company Details (for parent companies) */}
+                    {client.client_type === 'parent' && (
+                      <ParentCompanyDetails
+                        parentClient={client}
+                        isExpanded={expandedParentDetails[client.id] || false}
+                        onToggleExpanded={(isExpanded) => handleToggleParentDetails(client.id, isExpanded)}
+                      />
+                    )}
+                    
+                    {/* Multi-Property Management Controls */}
+                    {showMultiPropertyControls === client.id && (
+                      <MultiPropertyControls
+                        client={client}
+                        parentCompanies={parentCompanies}
+                        onClientUpdated={handleClientUpdated}
+                        onClose={() => setShowMultiPropertyControls(null)}
+                      />
+                    )}
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
@@ -464,6 +629,30 @@ function ClientDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const client = getClientById(parseInt(id));
+  const [parentCompany, setParentCompany] = useState(null);
+  const [childProperties, setChildProperties] = useState([]);
+
+  useEffect(() => {
+    const loadRelationshipData = async () => {
+      if (!client) return;
+
+      try {
+        if (client.client_type === 'child' && client.parent_company_id) {
+          const parent = await getParentCompanyForChild(client.id);
+          setParentCompany(parent);
+        }
+        
+        if (client.client_type === 'parent') {
+          const children = await getChildPropertiesForParent(client.id);
+          setChildProperties(children);
+        }
+      } catch (error) {
+        console.error('Failed to load relationship data:', error);
+      }
+    };
+
+    loadRelationshipData();
+  }, [client]);
 
   if (!client) {
     return (
@@ -486,7 +675,17 @@ function ClientDetail() {
             <button onClick={() => navigate('/clients')} className="btn btn-outline">
               ← Back
             </button>
-            <h1 className="card-title">{client.name}</h1>
+            <div className="flex items-center gap-3">
+              <ClientTypeIcon 
+                clientType={client.client_type || 'individual'}
+                parentName={parentCompany?.name}
+                childCount={childProperties.length}
+                showLabel={true}
+                showParentInfo={true}
+                size="lg"
+              />
+              <h1 className="card-title">{client.name}</h1>
+            </div>
             <div className="flex gap-2 ml-auto">
               <button
                 onClick={() => navigate(`/clients/${client.id}/edit`)}

@@ -362,7 +362,7 @@ function InvoiceList() {
               
               <div className="grid gap-4">
                 {displayInvoices.map((invoice) => (
-                  <div key={invoice.id} className="card border-l-4 border-blue-400">
+                  <div key={`collecting-${invoice.id}`} className="card border-l-4 border-blue-400">
                     <div className="card-content">
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
@@ -418,7 +418,7 @@ function InvoiceList() {
           {(activeTab === 'sent' || activeTab === 'paid') && (
             <div className="grid gap-4">
               {displayInvoices.map((invoice) => (
-                <div key={invoice.id} className="card">
+                <div key={`${activeTab}-${invoice.id}`} className="card">
                   <div className="card-content">
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
