@@ -27,6 +27,14 @@ function InvoiceList() {
   const [deleteConfirmation, setDeleteConfirmation] = useState(null);
   const [markingPaid, setMarkingPaid] = useState({});
   
+  // Paid invoice filters
+  const [paidInvoiceFilters, setPaidInvoiceFilters] = useState({
+    clientName: '',
+    dateFrom: '',
+    dateTo: ''
+  });
+  const [showPaidFilters, setShowPaidFilters] = useState(false);
+  
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -257,6 +265,7 @@ function InvoiceList() {
       });
     }
 
+    // Apply search term filter
     if (searchTerm) {
       displayInvoices = displayInvoices.filter(invoice =>
         (invoice.client_name || invoice.clientName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -265,10 +274,53 @@ function InvoiceList() {
       );
     }
 
+    // Apply paid invoice filters (only for paid tab)
+    if (activeTab === 'paid') {
+      // Client name filter
+      if (paidInvoiceFilters.clientName) {
+        displayInvoices = displayInvoices.filter(invoice =>
+          (invoice.client_name || invoice.clientName || '').toLowerCase().includes(paidInvoiceFilters.clientName.toLowerCase())
+        );
+      }
+
+      // Date range filter (using paid_date or fallback to date)
+      if (paidInvoiceFilters.dateFrom || paidInvoiceFilters.dateTo) {
+        displayInvoices = displayInvoices.filter(invoice => {
+          // Use paid_date if available, otherwise fall back to invoice date
+          const invoiceDate = invoice.paid_date || invoice.paidDate || invoice.date;
+          if (!invoiceDate) return true; // Include if no date available
+          
+          // Check date range
+          if (paidInvoiceFilters.dateFrom && invoiceDate < paidInvoiceFilters.dateFrom) {
+            return false;
+          }
+          if (paidInvoiceFilters.dateTo && invoiceDate > paidInvoiceFilters.dateTo) {
+            return false;
+          }
+          return true;
+        });
+      }
+    }
+
     return displayInvoices;
   };
 
   const displayInvoices = getDisplayInvoices();
+  
+  // Calculate total paid invoices before filtering (for "Showing X of Y" message)
+  const totalPaidInvoices = databaseInvoices.filter(i => i.status === 'Paid').length;
+  
+  // Check if any filters are active
+  const hasActiveFilters = paidInvoiceFilters.clientName || paidInvoiceFilters.dateFrom || paidInvoiceFilters.dateTo;
+  
+  // Clear all paid invoice filters
+  const clearPaidFilters = () => {
+    setPaidInvoiceFilters({
+      clientName: '',
+      dateFrom: '',
+      dateTo: ''
+    });
+  };
 
   if (loading) {
     return (
@@ -332,9 +384,14 @@ function InvoiceList() {
               </button>
               <button
                 onClick={() => setActiveTab('paid')}
-                className="btn btn-success min-h-[44px] py-3 px-4 font-medium"
+                className="btn btn-success min-h-[44px] py-3 px-4 font-medium relative"
               >
-                ✅ Paid ({databaseInvoices.filter(i => i.status === 'Paid').length})
+                ✓ Paid ({databaseInvoices.filter(i => i.status === 'Paid').length})
+                {activeTab === 'paid' && hasActiveFilters && (
+                  <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-xs rounded-full px-2 py-1">
+                    Filtered
+                  </span>
+                )}
               </button>
             </div>
           </div>
@@ -416,7 +473,101 @@ function InvoiceList() {
 
           {/* Sent/Paid Invoices View */}
           {(activeTab === 'sent' || activeTab === 'paid') && (
-            <div className="grid gap-4">
+            <div>
+              {/* Paid Invoice Filters - Only show for paid tab */}
+              {activeTab === 'paid' && (
+                <div className="mb-6">
+                  {/* Filter Toggle Button */}
+                  <button
+                    onClick={() => setShowPaidFilters(!showPaidFilters)}
+                    className="btn btn-outline mb-4 min-h-[44px] py-3 px-4 font-medium"
+                  >
+                    {showPaidFilters ? '🔼' : '🔽'} Filter Paid Invoices
+                    {hasActiveFilters && <span className="ml-2 text-green-600">({displayInvoices.length} of {totalPaidInvoices})</span>}
+                  </button>
+                  
+                  {/* Collapsible Filter Section */}
+                  {showPaidFilters && (
+                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {/* Client Name Filter */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Client Name
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Filter by client..."
+                            value={paidInvoiceFilters.clientName}
+                            onChange={(e) => setPaidInvoiceFilters(prev => ({ ...prev, clientName: e.target.value }))}
+                            className="w-full p-3 border border-gray-300 rounded-md min-h-[48px]"
+                          />
+                        </div>
+                        
+                        {/* Date From Filter */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Paid From Date
+                          </label>
+                          <input
+                            type="date"
+                            value={paidInvoiceFilters.dateFrom}
+                            onChange={(e) => setPaidInvoiceFilters(prev => ({ ...prev, dateFrom: e.target.value }))}
+                            className="w-full p-3 border border-gray-300 rounded-md min-h-[48px]"
+                          />
+                        </div>
+                        
+                        {/* Date To Filter */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Paid To Date
+                          </label>
+                          <input
+                            type="date"
+                            value={paidInvoiceFilters.dateTo}
+                            onChange={(e) => setPaidInvoiceFilters(prev => ({ ...prev, dateTo: e.target.value }))}
+                            className="w-full p-3 border border-gray-300 rounded-md min-h-[48px]"
+                          />
+                        </div>
+                        
+                        {/* Clear Filters Button */}
+                        <div className="flex items-end">
+                          <button
+                            onClick={clearPaidFilters}
+                            disabled={!hasActiveFilters}
+                            className={`w-full min-h-[48px] py-3 px-4 font-medium rounded-md ${
+                              hasActiveFilters 
+                                ? 'btn btn-outline border-red-300 text-red-600 hover:bg-red-50' 
+                                : 'btn btn-outline opacity-50 cursor-not-allowed'
+                            }`}
+                          >
+                            🗑️ Clear Filters
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {/* Filter Results Summary */}
+                      {hasActiveFilters && (
+                        <div className="mt-4 p-3 bg-blue-50 border-l-4 border-blue-400 rounded">
+                          <p className="text-sm text-blue-700">
+                            Showing <strong>{displayInvoices.length}</strong> of <strong>{totalPaidInvoices}</strong> paid invoices
+                            {paidInvoiceFilters.clientName && <span> matching "<strong>{paidInvoiceFilters.clientName}</strong>"</span>}
+                            {(paidInvoiceFilters.dateFrom || paidInvoiceFilters.dateTo) && (
+                              <span>
+                                {' '}paid between{' '}
+                                <strong>{paidInvoiceFilters.dateFrom || 'any date'}</strong> and{' '}
+                                <strong>{paidInvoiceFilters.dateTo || 'today'}</strong>
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              <div className="grid gap-4">
               {displayInvoices.map((invoice) => (
                 <div key={`${activeTab}-${invoice.id}`} className="card">
                   <div className="card-content">
@@ -430,6 +581,9 @@ function InvoiceList() {
                         <div className="flex gap-6 text-sm text-gray-600">
                           <span><strong>Date:</strong> {invoice.date}</span>
                           <span><strong>Due:</strong> {invoice.due_date || invoice.dueDate}</span>
+                          {activeTab === 'paid' && (invoice.paid_date || invoice.paidDate) && (
+                            <span><strong>Paid:</strong> {invoice.paid_date || invoice.paidDate}</span>
+                          )}
                           <span><strong>Total:</strong> ${(invoice.total || 0).toFixed(2)}</span>
                         </div>
                       </div>
@@ -462,6 +616,7 @@ function InvoiceList() {
                   <p>No {activeTab} invoices found.</p>
                 </div>
               )}
+              </div>
             </div>
           )}
         </div>
@@ -989,16 +1144,19 @@ function InvoiceDetail() {
             </button>
             <h1 className="card-title">Invoice #{invoice.invoice_number || invoice.id}</h1>
             <div className="flex gap-2 ml-auto">
-              <button
-                onClick={() => navigate(`/invoicing/${invoice.id}/edit`, { state: { invoiceData: invoice } })}
-                className="btn btn-primary"
-                disabled={invoice.status === 'Paid'}
-              >
-                Edit Invoice
-              </button>
-              <button onClick={handleSendInvoice} className="btn btn-secondary">
-                📧 Send Invoice
-              </button>
+              {invoice.status !== 'Paid' && (
+                <>
+                  <button
+                    onClick={() => navigate(`/invoicing/${invoice.id}/edit`, { state: { invoiceData: invoice } })}
+                    className="btn btn-primary"
+                  >
+                    Edit Invoice
+                  </button>
+                  <button onClick={handleSendInvoice} className="btn btn-secondary">
+                    📧 Send Invoice
+                  </button>
+                </>
+              )}
               {(invoice.status === 'Pending' || invoice.status === 'Sent') && (
                 <button 
                   onClick={handleMarkPaid} 
