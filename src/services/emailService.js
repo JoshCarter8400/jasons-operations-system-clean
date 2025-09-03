@@ -58,6 +58,54 @@ const hasValidNotes = (notes) => {
   return !placeholderPatterns.some(pattern => pattern.test(trimmedNotes));
 };
 
+// Helper function to detect if an invoice is multi-property
+const isMultiPropertyInvoice = (lineItems) => {
+  return lineItems.some(item => {
+    const description = item.description || '';
+    return description.includes('(') && description.includes(')');
+  });
+};
+
+// Helper function to extract property name from description
+const extractPropertyName = (description) => {
+  const match = description.match(/\(([^)]+)\)/);
+  return match ? match[1] : null;
+};
+
+// Helper function to clean service description by removing property name
+const cleanServiceDescription = (description) => {
+  return description.replace(/\s*\([^)]+\)\s*$/, '').trim();
+};
+
+// Helper function to group services by property
+const groupServicesByProperty = (lineItems) => {
+  const groups = {};
+  
+  lineItems.forEach(item => {
+    const propertyName = extractPropertyName(item.description);
+    const cleanDescription = cleanServiceDescription(item.description);
+    
+    if (propertyName) {
+      if (!groups[propertyName]) {
+        groups[propertyName] = [];
+      }
+      groups[propertyName].push({
+        ...item,
+        description: cleanDescription
+      });
+    } else {
+      // Handle services without property designation
+      const defaultGroup = 'Main Property';
+      if (!groups[defaultGroup]) {
+        groups[defaultGroup] = [];
+      }
+      groups[defaultGroup].push(item);
+    }
+  });
+  
+  return groups;
+};
+
 // Create professional HTML email template for invoices
 const createInvoiceEmailHTML = (invoice, client, businessInfo) => {
   console.log('🔍 DEBUG - businessInfo in email:', businessInfo);
@@ -68,15 +116,60 @@ const createInvoiceEmailHTML = (invoice, client, businessInfo) => {
   
   const subtotal = invoice.subtotal || 0;
   const total = invoice.total || 0;
+  const services = invoice.line_items || invoice.services || [];
   
-  const lineItems = (invoice.line_items || invoice.services || []).map(item => `
-    <tr>
-      <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb;">${item.description}</td>
-      <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.quantity || 1}</td>
-      <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;">$${(item.rate || item.amount || 0).toFixed(2)}</td>
-      <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;">$${((item.quantity || 1) * (item.rate || item.amount || 0)).toFixed(2)}</td>
-    </tr>
-  `).join('');
+  // Check if this is a multi-property invoice
+  const isMultiProperty = isMultiPropertyInvoice(services);
+  
+  let servicesHTML = '';
+  
+  if (isMultiProperty) {
+    // Group services by property and create enhanced display
+    const propertyGroups = groupServicesByProperty(services);
+    
+    servicesHTML = Object.entries(propertyGroups).map(([propertyName, propertyServices]) => {
+      const propertySubtotal = propertyServices.reduce((sum, item) => {
+        return sum + ((item.quantity || 1) * (item.rate || item.amount || 0));
+      }, 0);
+      
+      const propertyServicesHTML = propertyServices.map(item => `
+        <tr>
+          <td style="padding: 8px 16px; border-bottom: 1px solid #f3f4f6;">${item.description}</td>
+          <td style="padding: 8px 16px; border-bottom: 1px solid #f3f4f6; text-align: center;">${item.quantity || 1}</td>
+          <td style="padding: 8px 16px; border-bottom: 1px solid #f3f4f6; text-align: right;">$${(item.rate || item.amount || 0).toFixed(2)}</td>
+          <td style="padding: 8px 16px; border-bottom: 1px solid #f3f4f6; text-align: right;">$${((item.quantity || 1) * (item.rate || item.amount || 0)).toFixed(2)}</td>
+        </tr>
+      `).join('');
+      
+      return `
+        <tr>
+          <td colspan="4" style="padding: 16px 8px 8px 8px; background-color: #f8fafc; border-bottom: 2px solid ${BUSINESS_INFO.brandColor}; font-weight: bold; font-size: 16px; color: #1f2937;">
+            === ${propertyName} ===
+          </td>
+        </tr>
+        ${propertyServicesHTML}
+        <tr>
+          <td colspan="3" style="padding: 12px 8px; background-color: #f9fafb; text-align: right; font-weight: 600; color: #1f2937; border-bottom: 2px solid #e5e7eb;">
+            Property Subtotal:
+          </td>
+          <td style="padding: 12px 8px; background-color: #f9fafb; text-align: right; font-weight: bold; color: ${BUSINESS_INFO.brandColor}; border-bottom: 2px solid #e5e7eb;">
+            $${propertySubtotal.toFixed(2)}
+          </td>
+        </tr>
+      `;
+    }).join('');
+    
+  } else {
+    // Single property format (existing functionality)
+    servicesHTML = services.map(item => `
+      <tr>
+        <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb;">${item.description}</td>
+        <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.quantity || 1}</td>
+        <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;">$${(item.rate || item.amount || 0).toFixed(2)}</td>
+        <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;">$${((item.quantity || 1) * (item.rate || item.amount || 0)).toFixed(2)}</td>
+      </tr>
+    `).join('');
+  }
 
   return `
 <!DOCTYPE html>
@@ -131,7 +224,7 @@ const createInvoiceEmailHTML = (invoice, client, businessInfo) => {
           </tr>
         </thead>
         <tbody>
-          ${lineItems}
+          ${servicesHTML}
         </tbody>
       </table>
 
@@ -151,7 +244,7 @@ const createInvoiceEmailHTML = (invoice, client, businessInfo) => {
             <span style="color: #1f2937; font-weight: 600;">$${subtotal.toFixed(2)}</span>
           </div>
           <div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 2px solid ${BUSINESS_INFO.brandColor};">
-            <span style="color: #1f2937; font-weight: bold; font-size: 18px;">Total:</span>
+            <span style="color: #1f2937; font-weight: bold; font-size: 18px;">${isMultiProperty ? 'TOTAL FOR ALL PROPERTIES:' : 'Total:'}</span>
             <span style="color: ${BUSINESS_INFO.brandColor}; font-weight: bold; font-size: 18px;">$${total.toFixed(2)}</span>
           </div>
         </div>
@@ -178,13 +271,56 @@ const createInvoiceEmailHTML = (invoice, client, businessInfo) => {
 // Create professional HTML email template for payment receipts
 const createReceiptEmailHTML = (invoice, client, businessInfo, paymentMethod) => {
   const total = invoice.total || 0;
+  const services = invoice.line_items || invoice.services || [];
   
-  const lineItems = (invoice.line_items || invoice.services || []).map(item => `
-    <tr>
-      <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb;">${item.description}</td>
-      <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;">$${((item.quantity || 1) * (item.rate || item.amount || 0)).toFixed(2)}</td>
-    </tr>
-  `).join('');
+  // Check if this is a multi-property invoice
+  const isMultiProperty = isMultiPropertyInvoice(services);
+  
+  let servicesHTML = '';
+  
+  if (isMultiProperty) {
+    // Group services by property for receipt
+    const propertyGroups = groupServicesByProperty(services);
+    
+    servicesHTML = Object.entries(propertyGroups).map(([propertyName, propertyServices]) => {
+      const propertySubtotal = propertyServices.reduce((sum, item) => {
+        return sum + ((item.quantity || 1) * (item.rate || item.amount || 0));
+      }, 0);
+      
+      const propertyServicesHTML = propertyServices.map(item => `
+        <tr>
+          <td style="padding: 8px 16px; border-bottom: 1px solid #f3f4f6;">${item.description}</td>
+          <td style="padding: 8px 16px; border-bottom: 1px solid #f3f4f6; text-align: right;">$${((item.quantity || 1) * (item.rate || item.amount || 0)).toFixed(2)}</td>
+        </tr>
+      `).join('');
+      
+      return `
+        <tr>
+          <td colspan="2" style="padding: 16px 8px 8px 8px; background-color: #f8fafc; border-bottom: 2px solid ${BUSINESS_INFO.brandColor}; font-weight: bold; font-size: 16px; color: #1f2937;">
+            === ${propertyName} ===
+          </td>
+        </tr>
+        ${propertyServicesHTML}
+        <tr>
+          <td style="padding: 12px 8px; background-color: #f9fafb; text-align: right; font-weight: 600; color: #1f2937; border-bottom: 2px solid #e5e7eb;">
+            Property Subtotal:
+          </td>
+          <td style="padding: 12px 8px; background-color: #f9fafb; text-align: right; font-weight: bold; color: ${BUSINESS_INFO.brandColor}; border-bottom: 2px solid #e5e7eb;">
+            $${propertySubtotal.toFixed(2)}
+          </td>
+        </tr>
+      `;
+    }).join('');
+    
+  } else {
+    // Single property format for receipts
+    servicesHTML = services.map(item => `
+      <tr>
+        <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb;">${item.description}</td>
+        <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;">$${((item.quantity || 1) * (item.rate || item.amount || 0)).toFixed(2)}</td>
+      </tr>
+    `).join('');
+  }
 
   return `
 <!DOCTYPE html>
@@ -245,7 +381,7 @@ const createReceiptEmailHTML = (invoice, client, businessInfo, paymentMethod) =>
           </tr>
         </thead>
         <tbody>
-          ${lineItems}
+          ${servicesHTML}
         </tbody>
       </table>
 
