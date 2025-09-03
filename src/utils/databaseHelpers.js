@@ -801,6 +801,12 @@ export async function updateInvoiceStatus(invoiceId, status, additionalFields = 
     
     const fields = ['status = ?'];
     const values = [status];
+    
+    // Clear modified_since_sent flag when invoice is sent
+    if (status === 'sent' || status === 'Sent') {
+      fields.push('modified_since_sent = ?');
+      values.push(0);
+    }
 
     // Add additional fields
     Object.entries(additionalFields).forEach(([key, value]) => {
@@ -1036,6 +1042,96 @@ export async function updateInvoiceTotals(invoiceId, taxRate = 0) {
   } catch (error) {
     console.error('Error updating invoice totals:', error);
     throw new Error('Failed to update invoice totals');
+  }
+}
+
+/**
+ * Updates a database invoice with new data including line items
+ * Handles complete invoice replacement including line items
+ * @param {number} invoiceId - Invoice ID to update
+ * @param {Object} invoiceData - Updated invoice data with services array
+ * @returns {Promise<Object>} Updated invoice with line items
+ */
+export async function updateDatabaseInvoice(invoiceId, invoiceData) {
+  try {
+    const db = createLibSQLClient(config);
+    
+    // 1. Update main invoice fields and set modified flag for sent invoices
+    await db.execute({
+      sql: `
+        UPDATE invoices 
+        SET client_id = ?, 
+            client_name = ?, 
+            date = ?, 
+            due_date = ?, 
+            notes = ?,
+            modified_since_sent = CASE 
+              WHEN status = 'sent' OR status = 'Sent' THEN 1 
+              ELSE modified_since_sent 
+            END,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `,
+      args: [
+        invoiceData.clientId,
+        invoiceData.clientName,
+        invoiceData.date,
+        invoiceData.dueDate,
+        invoiceData.notes || '',
+        invoiceId
+      ]
+    });
+    
+    // 2. Delete existing line items
+    await db.execute({
+      sql: `DELETE FROM invoice_line_items WHERE invoice_id = ?`,
+      args: [invoiceId]
+    });
+    
+    // 3. Insert new line items
+    if (invoiceData.services && invoiceData.services.length > 0) {
+      for (const service of invoiceData.services) {
+        // Calculate amount properly: quantity * rate
+        const quantity = parseFloat(service.quantity) || 1;
+        const rate = parseFloat(service.rate) || 0;
+        const amount = quantity * rate;
+        
+        // Debug logging
+        console.log('Line item calculation:', {
+          description: service.description,
+          quantity,
+          rate,
+          calculatedAmount: amount,
+          providedAmount: service.amount
+        });
+        
+        await db.execute({
+          sql: `
+            INSERT INTO invoice_line_items (invoice_id, description, quantity, rate, amount)
+            VALUES (?, ?, ?, ?, ?)
+          `,
+          args: [
+            invoiceId,
+            service.description,
+            quantity,
+            rate,
+            amount  // Use calculated amount, not the provided one
+          ]
+        });
+      }
+    }
+    
+    // 4. Use the existing updateInvoiceTotals function to recalculate from database
+    // This ensures consistency by calculating from what's actually in the database
+    const totals = await updateInvoiceTotals(invoiceId);
+    console.log('Invoice totals from database:', totals);
+    
+    // Return the updated invoice with line items
+    return await getInvoiceWithLineItems(invoiceId);
+    
+  } catch (error) {
+    console.error('Error updating database invoice:', error);
+    throw new Error('Failed to update invoice in database');
   }
 }
 
@@ -2216,6 +2312,38 @@ export async function convertParentToIndividual(clientId) {
 
   } catch (error) {
     console.error('❌ Error converting parent to individual:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update only the modified_since_sent flag for an invoice
+ * Used when re-sending an invoice without changing its status
+ * @param {number} invoiceId - The invoice ID
+ * @param {boolean} modified - The modified flag value (true/false)
+ * @returns {Promise<boolean>} - Success status
+ */
+export async function updateInvoiceModifiedFlag(invoiceId, modified) {
+  try {
+    if (!config.url) {
+      throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    const db = createLibSQLClient(config);
+
+    // Update only the modified_since_sent flag
+    const result = await db.execute({
+      sql: `UPDATE invoices 
+            SET modified_since_sent = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?`,
+      args: [modified ? 1 : 0, invoiceId]
+    });
+
+    return result.rowsAffected > 0;
+
+  } catch (error) {
+    console.error('❌ Error updating invoice modified flag:', error);
     throw error;
   }
 }

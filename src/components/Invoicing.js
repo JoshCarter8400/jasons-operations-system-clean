@@ -681,6 +681,11 @@ function InvoiceList() {
 function AmountInput({ value, onChange, name, placeholder, required = false }) {
   const [inputValue, setInputValue] = useState(value === 0 ? '' : value.toString());
 
+  // Sync internal state when value prop changes
+  useEffect(() => {
+    setInputValue(value === 0 ? '' : value.toString());
+  }, [value]);
+
   const handleChange = (e) => {
     const newValue = e.target.value;
     
@@ -959,9 +964,10 @@ function CreateInvoice() {
                         <button
                           type="button"
                           onClick={() => removeService(index)}
-                          className="btn btn-outline btn-sm w-full"
+                          className="btn btn-danger btn-sm w-full"
+                          title="Remove this service from the invoice"
                         >
-                          ×
+                          Delete Service
                         </button>
                       )}
                     </div>
@@ -1022,7 +1028,6 @@ function InvoiceDetail() {
   const {
     paymentMethods,
     getClientById,
-    sendInvoice,
     getAllDatabaseInvoices
   } = useData();
   
@@ -1034,8 +1039,13 @@ function InvoiceDetail() {
   const [markingPaid, setMarkingPaid] = useState(false);
 
   useEffect(() => {
-    // Only fetch from database if invoice data wasn't passed via navigation state
-    if (!location.state?.invoiceData) {
+    // Use passed invoice data or fetch from database
+    if (location.state?.invoiceData) {
+      // Use the updated invoice data passed from edit
+      setInvoice(location.state.invoiceData);
+      setLoading(false);
+    } else {
+      // Fetch from database if no data was passed
       const loadInvoice = async () => {
         try {
           setLoading(true);
@@ -1079,28 +1089,37 @@ function InvoiceDetail() {
   }
 
   const handleSendInvoice = async () => {
-    const client = getClientById(invoice.clientId);
-    
-    // Try SMS first if client has phone number, then fallback to email
-    let sendResult = { success: false };
-    
-    if (client?.phone) {
-      const { sendInvoiceSMS } = await import('../services/emailService');
-      sendResult = await sendInvoiceSMS(
-        invoice,
-        client,
-        { name: "Trusting and Affordable Tree Service and Lawn Care", phone: "(516) 580-1223", paymentMethods: "Zelle, Venmo, Cash App, Check" }
-      );
-      
-      if (sendResult.success) {
-        await sendInvoice(invoice.id, 'sms');
-        return;
+    try {
+      const client = getClientById(invoice.clientId);
+      if (client && client.email) {
+        const { sendInvoiceEmail } = await import('../services/emailService');
+        const currentBusinessInfo = {
+          name: "Trusting and Affordable Tree Service and Lawn Care",
+          phone: "(516) 580-1223",
+          email: "Trustingandaffordabletrees@gmail.com",
+          paymentMethods: ["Zelle", "Venmo", "Cash App", "Check"]
+        };
+        
+        await sendInvoiceEmail(invoice, client, currentBusinessInfo);
+        alert('Invoice sent successfully via email!');
+        
+        // Clear the modifiedSinceSent flag in database without changing status
+        const { updateInvoiceModifiedFlag } = await import('../utils/databaseHelpers');
+        await updateInvoiceModifiedFlag(invoice.id, false);
+        
+        // Refresh invoice data to update UI
+        const databaseInvoices = await getAllDatabaseInvoices();
+        const updatedInvoice = databaseInvoices.find(inv => inv.id === parseInt(invoice.id));
+        if (updatedInvoice) {
+          setInvoice(updatedInvoice);
+        }
+      } else {
+        alert('No email address found for this client.');
       }
+    } catch (error) {
+      console.error('Failed to send invoice:', error);
+      alert('Failed to send invoice. Please try again.');
     }
-    
-    // Fallback to email
-    const method = client && client.email ? 'email' : 'manual';
-    await sendInvoice(invoice.id, method);
   };
 
   const handleMarkPaid = async () => {
@@ -1144,20 +1163,33 @@ function InvoiceDetail() {
             </button>
             <h1 className="card-title">Invoice #{invoice.invoice_number || invoice.id}</h1>
             <div className="flex gap-2 ml-auto">
-              {invoice.status !== 'Paid' && (
-                <>
-                  <button
-                    onClick={() => navigate(`/invoicing/${invoice.id}/edit`, { state: { invoiceData: invoice } })}
-                    className="btn btn-primary"
-                  >
-                    Edit Invoice
-                  </button>
-                  <button onClick={handleSendInvoice} className="btn btn-secondary">
-                    📧 Send Invoice
-                  </button>
-                </>
+              {/* Edit Invoice button - available for non-paid invoices */}
+              {(invoice.status !== 'Paid' && invoice.status !== 'paid') && (
+                <button
+                  onClick={() => navigate(`/invoicing/${invoice.id}/edit`, { state: { invoiceData: invoice } })}
+                  className="btn btn-primary"
+                >
+                  Edit Invoice
+                </button>
               )}
-              {(invoice.status === 'Pending' || invoice.status === 'Sent') && (
+              
+              {/* Send Invoice button - only for collecting status */}
+              {(invoice.status === 'Collecting' || invoice.status === 'collecting') && (
+                <button onClick={handleSendInvoice} className="btn btn-secondary">
+                  📧 Send Invoice
+                </button>
+              )}
+              
+              {/* Send Updated Invoice button - for modified sent invoices */}
+              {(invoice.status === 'Sent' || invoice.status === 'sent') && invoice.modifiedSinceSent && (
+                <button onClick={handleSendInvoice} className="btn btn-secondary">
+                  📧 Send Updated Invoice
+                </button>
+              )}
+              
+              {/* Mark Paid button - for sent/pending invoices (handle both case variations) */}
+              {(invoice.status === 'Pending' || invoice.status === 'pending' || 
+                invoice.status === 'Sent' || invoice.status === 'sent') && (
                 <button 
                   onClick={handleMarkPaid} 
                   disabled={markingPaid}
@@ -1267,6 +1299,7 @@ function EditInvoice() {
     services,
     getClientById,
     updateInvoice,
+    updateDatabaseInvoice,
     getAllDatabaseInvoices
   } = useData();
   
@@ -1302,12 +1335,74 @@ function EditInvoice() {
 
   useEffect(() => {
     if (invoice) {
+      // Comprehensive debug logging
+      console.log('=== INVOICE SERVICES DEBUG ===');
+      console.log('Full invoice object:', invoice);
+      console.log('Invoice services array:', invoice.services);
+      console.log('Invoice line_items array:', invoice.line_items);
+      
+      // Check if services come from line_items (database invoices)
+      const servicesData = invoice.services || invoice.line_items;
+      
+      if (servicesData) {
+        console.log('Services data source:', invoice.services ? 'services' : 'line_items');
+        console.log('Raw services data:', servicesData);
+        
+        servicesData.forEach((service, index) => {
+          console.log(`Service ${index + 1} RAW:`, service);
+          console.log(`Service ${index + 1} DETAILS:`, {
+            description: service.description,
+            rate: service.rate,
+            rateType: typeof service.rate,
+            rateValue: JSON.stringify(service.rate),
+            rateIsNull: service.rate === null,
+            rateIsUndefined: service.rate === undefined,
+            quantity: service.quantity,
+            quantityType: typeof service.quantity,
+            amount: service.amount,
+            amountType: typeof service.amount
+          });
+        });
+      }
+      
       setSelectedClient(getClientById(invoice.clientId));
+      
+      // Fix services initialization with proper type conversion
+      // Handle both 'services' and 'line_items' properties (database invoices use line_items)
+      const services = servicesData ? servicesData.map(service => {
+        // More robust conversion handling null, undefined, and string values
+        const qty = service.quantity !== null && service.quantity !== undefined 
+          ? Number(service.quantity) 
+          : 1;
+        const rt = service.rate !== null && service.rate !== undefined 
+          ? Number(service.rate) 
+          : 0;
+        const amt = service.amount !== null && service.amount !== undefined 
+          ? Number(service.amount) 
+          : (qty * rt);
+        
+        const converted = {
+          description: service.description || '',
+          quantity: qty,
+          rate: rt,
+          amount: amt
+        };
+        
+        console.log(`Converting service "${service.description}":`, {
+          original: { rate: service.rate, quantity: service.quantity, amount: service.amount },
+          converted: converted
+        });
+        
+        return converted;
+      }) : [{ description: '', quantity: 1, rate: 0, amount: 0 }];
+      
+      console.log('Final converted services for form:', services);
+      
       setInvoiceData({
         date: invoice.date || '',
         dueDate: invoice.dueDate || '',
         notes: invoice.notes || '',
-        services: invoice.services || [{ description: '', quantity: 1, rate: 0, amount: 0 }]
+        services: services
       });
     }
   }, [invoice, getClientById]);
@@ -1359,11 +1454,21 @@ function EditInvoice() {
 
   const handleServiceChange = (index, field, value) => {
     const newServices = [...invoiceData.services];
-    newServices[index][field] = value;
     
-    // Auto-calculate amount
+    // Ensure proper numeric handling for quantity and rate
+    if (field === 'quantity') {
+      newServices[index][field] = Number(value) || 1;
+    } else if (field === 'rate') {
+      newServices[index][field] = Number(value) || 0;
+    } else {
+      newServices[index][field] = value;
+    }
+    
+    // Auto-calculate amount with proper number conversion
     if (field === 'quantity' || field === 'rate') {
-      newServices[index].amount = newServices[index].quantity * newServices[index].rate;
+      const qty = Number(newServices[index].quantity) || 1;
+      const rt = Number(newServices[index].rate) || 0;
+      newServices[index].amount = qty * rt;
     }
     
     setInvoiceData({
@@ -1401,23 +1506,74 @@ function EditInvoice() {
   const tax = 0; // No tax applied
   const total = subtotal;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!selectedClient) {
       alert('Please select a client');
       return;
     }
     
-    updateInvoice(invoice.id, {
-      clientId: selectedClient.id,
-      clientName: selectedClient.name,
-      ...invoiceData,
-      subtotal,
-      tax,
-      total
-    });
-    
-    navigate(`/invoicing/${invoice.id}`, { state: { invoiceData: invoice } });
+    try {
+      // Use database update for sent/paid invoices (they're in the database)
+      // Check invoice status to determine if it's a database invoice
+      const isCollecting = invoice.status === 'collecting' || invoice.status === 'Collecting';
+      
+      if (isCollecting) {
+        // Collecting invoices still use localStorage
+        updateInvoice(invoice.id, {
+          clientId: selectedClient.id,
+          clientName: selectedClient.name,
+          ...invoiceData,
+          subtotal,
+          tax,
+          total
+        });
+        alert('Invoice updated successfully!');
+        
+        // Navigate with updated collecting invoice data
+        navigate(`/invoicing/${invoice.id}`, { 
+          state: { 
+            invoiceData: {
+              ...invoice,
+              clientId: selectedClient.id,
+              clientName: selectedClient.name,
+              ...invoiceData,
+              subtotal,
+              tax,
+              total
+            }
+          }
+        });
+        return;
+      } else {
+        // Sent/Paid invoices use database update
+        const updatedInvoice = await updateDatabaseInvoice(invoice.id, {
+          clientId: selectedClient.id,
+          clientName: selectedClient.name,
+          ...invoiceData,
+          subtotal,
+          tax,
+          total
+        });
+        
+        // Show success message
+        alert('Invoice updated successfully!');
+        
+        // Refresh invoice data to get updated totals from database
+        const databaseInvoices = await getAllDatabaseInvoices();
+        const refreshedInvoice = databaseInvoices.find(inv => inv.id === parseInt(invoice.id));
+        
+        // Navigate with refreshed invoice data
+        navigate(`/invoicing/${invoice.id}`, { 
+          state: { invoiceData: refreshedInvoice || updatedInvoice },
+          replace: true 
+        });
+        return;
+      }
+    } catch (error) {
+      console.error('Failed to update invoice:', error);
+      alert('Failed to update invoice. Please try again.');
+    }
   };
 
   return (
@@ -1557,9 +1713,10 @@ function EditInvoice() {
                         <button
                           type="button"
                           onClick={() => removeService(index)}
-                          className="btn btn-outline btn-sm w-full"
+                          className="btn btn-danger btn-sm w-full"
+                          title="Remove this service from the invoice"
                         >
-                          ×
+                          Delete Service
                         </button>
                       )}
                     </div>

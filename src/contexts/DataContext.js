@@ -8,7 +8,7 @@ import {
   deleteClient as dbDeleteClient,
   migrateFromLocalStorage
 } from '../utils/database';
-import { insertInvoiceWithNumber, insertInvoiceLineItem, getInvoiceWithLineItems, updateInvoiceTotals, deleteInvoiceLineItems, deleteInvoiceSafely, canDeleteInvoice, updateBusinessSettings, addServiceArea as dbAddServiceArea, removeServiceArea as dbRemoveServiceArea, addServiceType as dbAddServiceType, updateServiceType as dbUpdateServiceType, removeServiceType as dbRemoveServiceType, addPaymentMethod as dbAddPaymentMethod, removePaymentMethod as dbRemovePaymentMethod, getAllBusinessSettingsData } from '../utils/databaseHelpers';
+import { insertInvoiceWithNumber, insertInvoiceLineItem, getInvoiceWithLineItems, updateInvoiceTotals, deleteInvoiceLineItems, deleteInvoiceSafely, canDeleteInvoice, updateBusinessSettings, addServiceArea as dbAddServiceArea, removeServiceArea as dbRemoveServiceArea, addServiceType as dbAddServiceType, updateServiceType as dbUpdateServiceType, removeServiceType as dbRemoveServiceType, addPaymentMethod as dbAddPaymentMethod, removePaymentMethod as dbRemovePaymentMethod, getAllBusinessSettingsData, updateDatabaseInvoice as dbUpdateDatabaseInvoice, updateInvoiceStatus as dbUpdateInvoiceStatus } from '../utils/databaseHelpers';
 // Import to ensure global functions are registered
 import '../utils/executeMigration';
 import { 
@@ -454,6 +454,30 @@ export const DataProvider = ({ children }) => {
     return true;
   };
 
+  /**
+   * Updates a database invoice (sent/paid invoices) with new data
+   * @param {number} invoiceId - Invoice ID to update
+   * @param {Object} invoiceData - Updated invoice data with services array
+   * @returns {Promise<Object>} Updated invoice
+   */
+  const updateDatabaseInvoice = async (invoiceId, invoiceData) => {
+    try {
+      // Update in database
+      const updatedInvoice = await dbUpdateDatabaseInvoice(invoiceId, invoiceData);
+      
+      // No popup - just update successfully
+      // The component will handle showing a send button if needed
+      
+      // Refresh the database invoices cache
+      await getAllDatabaseInvoices(true);
+      
+      return updatedInvoice;
+    } catch (error) {
+      console.error('Failed to update database invoice:', error);
+      throw error;
+    }
+  };
+
   const markInvoicePaid = async (id, paymentMethod = '') => {
     // Cache business info once at the start of the function
     const currentBusinessInfo = {
@@ -516,15 +540,32 @@ export const DataProvider = ({ children }) => {
       paymentMethods: businessSettings.paymentMethods
     };
 
-    const invoice = (businessData.invoices || []).find(inv => inv.id === parseInt(id));
+    // First check if it's a database invoice (sent/paid invoices are in the database)
+    const databaseInvoices = await getAllDatabaseInvoices();
+    let invoice = databaseInvoices.find(inv => inv.id === parseInt(id));
+    
+    // If not found in database, check in-memory invoices
+    if (!invoice) {
+      invoice = (businessData.invoices || []).find(inv => inv.id === parseInt(id));
+      if (invoice) {
+        // Update in-memory invoice
+        updateInvoice(id, {
+          status: 'Sent',
+          sentDate: new Date().toISOString().split('T')[0]
+        });
+      }
+    } else {
+      // Update database invoice status and clear modified_since_sent flag
+      await dbUpdateInvoiceStatus(parseInt(id), 'sent', new Date().toISOString().split('T')[0]);
+      // Refresh to get updated invoice
+      const refreshed = await getAllDatabaseInvoices();
+      invoice = refreshed.find(inv => inv.id === parseInt(id));
+    }
+    
     if (invoice) {
-      updateInvoice(id, {
-        status: 'Sent',
-        sentDate: new Date().toISOString().split('T')[0]
-      });
-
       if (method === 'email') {
-        const client = businessData.clients.find(c => c.id === invoice.clientId);
+        const client = businessData.clients.find(c => c.id === invoice.clientId) || 
+                      clients.find(c => c.id === invoice.clientId);
         if (client && client.email) {
           const emailResult = await sendInvoiceEmail(
             { ...invoice, status: 'Sent', sentDate: new Date().toISOString().split('T')[0] },
@@ -550,10 +591,11 @@ export const DataProvider = ({ children }) => {
             return { success: false, error: emailResult.error };
           }
         } else {
+          const clientName = client?.name || 'Unknown Client';
           createEmailNotification(
             'invoice_warning',
             'No Email Address',
-            `Invoice #${invoice.invoice_number || invoice.id} marked as sent - no email address on file for ${businessData.clients.find(c => c.id === invoice.clientId)?.name}`,
+            `Invoice #${invoice.invoice_number || invoice.id} marked as sent - no email address on file for ${clientName}`,
             false
           );
           return { success: true, method: 'marked', note: 'No email address available' };
@@ -1211,7 +1253,8 @@ export const DataProvider = ({ children }) => {
             notes: invoice.notes,
             sentDate: invoice.sent_date,
             paidDate: invoice.paid_date,
-            paymentMethod: invoice.payment_method
+            paymentMethod: invoice.payment_method,
+            modifiedSinceSent: invoice.modified_since_sent
           };
         })
       );
@@ -1297,6 +1340,7 @@ export const DataProvider = ({ children }) => {
     updateClient,
     addInvoice,
     updateInvoice,
+    updateDatabaseInvoice,
     markInvoicePaid,
     sendInvoice,
     getClientById,
