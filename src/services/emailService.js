@@ -13,12 +13,12 @@ const TWILIO_PHONE_NUMBER = process.env.REACT_APP_TWILIO_PHONE_NUMBER;
 
 // Business Information
 const BUSINESS_INFO = {
-  name: "Trusting and Affordable Tree Service and Lawn Care",
-  email: process.env.REACT_APP_JASON_BUSINESS_EMAIL,
-  phone: process.env.REACT_APP_JASON_PHONE_NUMBER,
+  name: 'Trusting and Affordable Tree Service and Lawn Care',
+  email: process.env.REACT_APP_JASON_BUSINESS_EMAIL || 'Email not configured',
+  phone: process.env.REACT_APP_JASON_PHONE_NUMBER || 'Phone not configured',
   taxRate: 0,
-  tagline: "Professional Landscape Services - Glad to be helpful",
-  brandColor: "#16a34a"
+  tagline: 'Professional Landscape Services - Glad to be helpful',
+  brandColor: '#16a34a',
 };
 
 // Initialize EmailJS
@@ -183,18 +183,30 @@ const createInvoiceEmailHTML = (invoice, client, businessInfo) => {
   <div style="max-width: 600px; margin: 0 auto; background-color: white; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
     
     <!-- Header -->
-    <div style="background: linear-gradient(135deg, ${BUSINESS_INFO.brandColor}, #059669); color: white; padding: 30px; text-align: center;">
-      <h1 style="margin: 0; font-size: 28px; font-weight: bold;">${BUSINESS_INFO.name}</h1>
-      <p style="margin: 8px 0 0 0; font-size: 16px; opacity: 0.9;">${BUSINESS_INFO.tagline}</p>
+    <div style="background: linear-gradient(135deg, ${
+      BUSINESS_INFO.brandColor
+    }, #059669); color: white; padding: 30px; text-align: center;">
+      <h1 style="margin: 0; font-size: 28px; font-weight: bold;">${
+        BUSINESS_INFO.name
+      }</h1>
+      <p style="margin: 8px 0 0 0; font-size: 16px; opacity: 0.9;">${
+        BUSINESS_INFO.tagline
+      }</p>
     </div>
 
     <!-- Invoice Header -->
     <div style="padding: 30px;">
       <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 30px;">
         <div>
-          <h2 style="margin: 0; color: #1f2937; font-size: 24px;">Invoice #${invoice.id}</h2>
-          <p style="margin: 5px 0; color: #6b7280;">Date: ${new Date(invoice.date || Date.now()).toLocaleDateString()}</p>
-          <p style="margin: 5px 0; color: #6b7280;">Due Date: ${new Date(invoice.due_date || invoice.dueDate || Date.now()).toLocaleDateString()}</p>
+          <h2 style="margin: 0; color: #1f2937; font-size: 24px;">Invoice #${
+            invoice.id
+          }</h2>
+          <p style="margin: 5px 0; color: #6b7280;">Date: ${new Date(
+            invoice.date || Date.now()
+          ).toLocaleDateString()}</p>
+          <p style="margin: 5px 0; color: #6b7280;">Due Date: ${new Date(
+            invoice.due_date || invoice.dueDate || Date.now()
+          ).toLocaleDateString()}</p>
         </div>
         <div style="text-align: right;">
           <p style="margin: 0; color: #1f2937; font-weight: bold;">From:</p>
@@ -207,20 +219,43 @@ const createInvoiceEmailHTML = (invoice, client, businessInfo) => {
       <!-- Client Information -->
       <div style="background-color: #f9fafb; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
         <p style="margin: 0; color: #1f2937; font-weight: bold;">Bill To:</p>
-        <p style="margin: 5px 0; color: #1f2937; font-size: 16px; font-weight: 600;">${client.name}</p>
+        <p style="margin: 5px 0; color: #1f2937; font-size: 16px; font-weight: 600;">${
+          client.name
+        }</p>
         <p style="margin: 5px 0; color: #6b7280;">${client.email}</p>
-        ${client.address ? `<p style="margin: 5px 0; color: #6b7280;">${client.address}</p>` : ''}
-        ${client.phone ? `<p style="margin: 5px 0; color: #6b7280;">${client.phone}</p>` : ''}
+        ${
+          client.address
+            ? `<p style="margin: 5px 0; color: #6b7280;">${client.address}</p>`
+            : ''
+        }
+        ${
+          client.phone
+            ? `<p style="margin: 5px 0; color: #6b7280;">${client.phone}</p>`
+            : ''
+        }
+      </div>
+
+      <!-- PDF Request Message -->
+      <div style="text-align: center; padding: 15px 0; color: #6b7280; font-size: 14px;">
+        <p style="margin: 5px 0;">Need a PDF copy of this invoice? Simply reply to this email and we'll be happy to send one.</p>
       </div>
 
       <!-- Services Table -->
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
         <thead>
           <tr style="background-color: #f3f4f6;">
-            <th style="padding: 12px 8px; text-align: left; font-weight: 600; color: #1f2937; border-bottom: 2px solid ${BUSINESS_INFO.brandColor};">Description</th>
-            <th style="padding: 12px 8px; text-align: center; font-weight: 600; color: #1f2937; border-bottom: 2px solid ${BUSINESS_INFO.brandColor};">Qty</th>
-            <th style="padding: 12px 8px; text-align: right; font-weight: 600; color: #1f2937; border-bottom: 2px solid ${BUSINESS_INFO.brandColor};">Rate</th>
-            <th style="padding: 12px 8px; text-align: right; font-weight: 600; color: #1f2937; border-bottom: 2px solid ${BUSINESS_INFO.brandColor};">Amount</th>
+            <th style="padding: 12px 8px; text-align: left; font-weight: 600; color: #1f2937; border-bottom: 2px solid ${
+              BUSINESS_INFO.brandColor
+            };">Description</th>
+            <th style="padding: 12px 8px; text-align: center; font-weight: 600; color: #1f2937; border-bottom: 2px solid ${
+              BUSINESS_INFO.brandColor
+            };">Qty</th>
+            <th style="padding: 12px 8px; text-align: right; font-weight: 600; color: #1f2937; border-bottom: 2px solid ${
+              BUSINESS_INFO.brandColor
+            };">Rate</th>
+            <th style="padding: 12px 8px; text-align: right; font-weight: 600; color: #1f2937; border-bottom: 2px solid ${
+              BUSINESS_INFO.brandColor
+            };">Amount</th>
           </tr>
         </thead>
         <tbody>
@@ -229,38 +264,60 @@ const createInvoiceEmailHTML = (invoice, client, businessInfo) => {
       </table>
 
       <!-- Notes Section -->
-      ${hasValidNotes(invoice.notes) ? `
+      ${
+        hasValidNotes(invoice.notes)
+          ? `
       <div style="background-color: #f9fafb; border-left: 4px solid ${BUSINESS_INFO.brandColor}; padding: 20px; margin-bottom: 30px;">
         <h3 style="margin: 0 0 10px 0; color: #1f2937;">📝 Additional Notes</h3>
         <p style="margin: 0; color: #374151; white-space: pre-wrap; line-height: 1.6;">${invoice.notes}</p>
       </div>
-      ` : ''}
+      `
+          : ''
+      }
 
       <!-- Totals -->
       <div style="text-align: right; margin-bottom: 30px;">
         <div style="display: inline-block; min-width: 200px;">
           <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e5e7eb;">
             <span style="color: #6b7280;">Subtotal:</span>
-            <span style="color: #1f2937; font-weight: 600;">$${subtotal.toFixed(2)}</span>
+            <span style="color: #1f2937; font-weight: 600;">$${subtotal.toFixed(
+              2
+            )}</span>
           </div>
-          <div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 2px solid ${BUSINESS_INFO.brandColor};">
-            <span style="color: #1f2937; font-weight: bold; font-size: 18px;">${isMultiProperty ? 'TOTAL FOR ALL PROPERTIES:' : 'Total:'}</span>
-            <span style="color: ${BUSINESS_INFO.brandColor}; font-weight: bold; font-size: 18px;">$${total.toFixed(2)}</span>
+          <div style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 2px solid ${
+            BUSINESS_INFO.brandColor
+          };">
+            <span style="color: #1f2937; font-weight: bold; font-size: 18px;">${
+              isMultiProperty ? 'TOTAL FOR ALL PROPERTIES:' : 'Total:'
+            }</span>
+            <span style="color: ${
+              BUSINESS_INFO.brandColor
+            }; font-weight: bold; font-size: 18px;">$${total.toFixed(2)}</span>
           </div>
         </div>
       </div>
 
       <!-- Payment Information -->
-      <div style="background-color: #ecfdf5; border-left: 4px solid ${BUSINESS_INFO.brandColor}; padding: 20px; margin-bottom: 30px;">
+      <div style="background-color: #ecfdf5; border-left: 4px solid ${
+        BUSINESS_INFO.brandColor
+      }; padding: 20px; margin-bottom: 30px;">
         <h3 style="margin: 0 0 10px 0; color: #1f2937;">Payment Information</h3>
-        <p style="margin: 5px 0; color: #6b7280;"><strong>Accepted Methods:</strong> ${(businessInfo.paymentMethods || []).join(', ')}</p>
-        <p style="margin: 5px 0; color: #6b7280;"><strong>Service Areas:</strong> ${(businessInfo.serviceAreas || []).join(', ')}</p>
+        <p style="margin: 5px 0; color: #6b7280;"><strong>Accepted Methods:</strong> ${(
+          businessInfo.paymentMethods || []
+        ).join(', ')}</p>
+        <p style="margin: 5px 0; color: #6b7280;"><strong>Service Areas:</strong> ${(
+          businessInfo.serviceAreas || []
+        ).join(', ')}</p>
       </div>
 
       <!-- Footer -->
       <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280;">
-        <p style="margin: 5px 0;">Thank you for choosing ${BUSINESS_INFO.name}!</p>
-        <p style="margin: 5px 0;">Questions? Contact us at ${BUSINESS_INFO.phone} or ${BUSINESS_INFO.email}</p>
+        <p style="margin: 5px 0;">Thank you for choosing ${
+          BUSINESS_INFO.name
+        }!</p>
+        <p style="margin: 5px 0;">Questions? Contact us at ${
+          BUSINESS_INFO.phone
+        } or ${BUSINESS_INFO.email}</p>
       </div>
     </div>
   </div>
@@ -352,7 +409,7 @@ const createReceiptEmailHTML = (invoice, client, businessInfo, paymentMethod) =>
       <div style="display: flex; justify-content: space-between; margin-bottom: 30px;">
         <div>
           <p style="margin: 0; color: #1f2937; font-weight: bold;">Payment Date:</p>
-          <p style="margin: 5px 0; color: #6b7280; font-size: 18px;">${new Date(invoice.paid_date || invoice.paidDate || Date.now()).toLocaleDateString()}</p>
+          <p style="margin: 5px 0; color: #6b7280; font-size: 18px;">${invoice.paid_date || invoice.paidDate ? new Date(invoice.paid_date || invoice.paidDate + 'T12:00:00').toLocaleDateString('en-US', { timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' })}</p>
           <p style="margin: 15px 0 5px 0; color: #1f2937; font-weight: bold;">Payment Method:</p>
           <p style="margin: 5px 0; color: #6b7280; font-size: 18px;">${paymentMethod}</p>
         </div>
@@ -369,6 +426,11 @@ const createReceiptEmailHTML = (invoice, client, businessInfo, paymentMethod) =>
         <p style="margin: 5px 0; color: #6b7280;">${client.email}</p>
         ${client.address ? `<p style="margin: 5px 0; color: #6b7280;">${client.address}</p>` : ''}
         ${client.phone ? `<p style="margin: 5px 0; color: #6b7280;">${client.phone}</p>` : ''}
+      </div>
+
+      <!-- PDF Request Message -->
+      <div style="text-align: center; padding: 15px 0; color: #6b7280; font-size: 14px;">
+        <p style="margin: 5px 0;">Need a PDF copy of this receipt? Simply reply to this email and we'll be happy to send one.</p>
       </div>
 
       <!-- Services Summary -->
@@ -405,7 +467,6 @@ const createReceiptEmailHTML = (invoice, client, businessInfo, paymentMethod) =>
         <p style="margin: 5px 0;"><strong>${BUSINESS_INFO.name}</strong></p>
         <p style="margin: 5px 0;">${BUSINESS_INFO.phone} | ${BUSINESS_INFO.email}</p>
         <p style="margin: 5px 0; font-style: italic;">${BUSINESS_INFO.tagline}</p>
-        <p style="margin: 15px 0 5px 0; font-size: 14px;">Serving: ${(businessInfo.serviceAreas || []).join(', ')}</p>
       </div>
     </div>
   </div>
@@ -870,7 +931,7 @@ Thank you for choosing our services! 🙏`;
 // Create SMS text templates for payment receipts
 const createReceiptSMSText = (invoice, client, businessInfo, paymentMethod) => {
   const total = (invoice.total || 0).toFixed(2);
-  const paidDate = new Date(invoice.paid_date || invoice.paidDate || Date.now()).toLocaleDateString();
+  const paidDate = invoice.paid_date || invoice.paidDate ? new Date(invoice.paid_date || invoice.paidDate + 'T00:00:00').toLocaleDateString() : new Date().toLocaleDateString();
   
   return `✅ ${businessInfo.name}
 

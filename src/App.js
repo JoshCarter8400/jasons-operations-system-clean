@@ -7,6 +7,7 @@ import Dashboard from './components/Dashboard';
 import ClientManagement from './components/ClientManagement';
 import EquipmentManagement from './components/EquipmentManagement';
 import Invoicing from './components/Invoicing';
+import InvoicePortal from './components/InvoicePortal';
 import RouteOptimization from './components/RouteOptimization';
 import DailySchedule from './components/DailySchedule';
 import BusinessSettings from './components/BusinessSettings';
@@ -82,6 +83,7 @@ function App() {
               <Route path="/clients/*" element={<ClientManagement />} />
               <Route path="/equipment/*" element={<EquipmentManagement />} />
               <Route path="/invoicing/*" element={<Invoicing />} />
+              <Route path="/invoice/:invoiceId/view" element={<InvoicePortal />} />
               <Route path="/routes" element={<RouteOptimization />} />
               <Route path="/settings" element={<BusinessSettings />} />
               <Route path="/test-db" element={<DatabaseFunctionTester />} />

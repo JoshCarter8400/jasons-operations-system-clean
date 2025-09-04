@@ -1198,6 +1198,17 @@ function InvoiceDetail() {
                   {markingPaid ? '⏳ Processing...' : '✓ Mark Paid'}
                 </button>
               )}
+              
+              {/* Download PDF button - for sent and paid invoices only (not collecting) */}
+              {((invoice.status === 'Sent' || invoice.status === 'sent' || 
+                invoice.status === 'Paid' || invoice.status === 'paid')) && (
+                <button
+                  onClick={() => window.open(`https://jasons-operations-system-clean-production.up.railway.app/invoice/${invoice.invoice_number || invoice.id}/view`, '_blank')}
+                  className="btn btn-outline"
+                >
+                  📄 Download PDF
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1772,6 +1783,7 @@ function EditInvoice() {
     </div>
   );
 }
+
 
 function Invoicing() {
   return (
