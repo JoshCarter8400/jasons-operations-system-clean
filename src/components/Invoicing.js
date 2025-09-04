@@ -3,6 +3,8 @@ import { Routes, Route, Link, useNavigate, useSearchParams, useParams, useLocati
 import { useData } from '../contexts/DataContext';
 import CollectingInvoiceEditor from './CollectingInvoiceEditor';
 import { InvoiceStatusBadge } from './InvoiceStatusBadge';
+import { shouldUsePropertyGrouping } from '../utils/propertyGrouping';
+import { isMultiPropertyInvoice, groupServicesByProperty } from '../utils/multiPropertyHelpers';
 
 
 function InvoiceList() {
@@ -13,7 +15,8 @@ function InvoiceList() {
     markCollectingInvoicePaid,
     deleteInvoice,
     checkCanDeleteInvoice,
-    paymentMethods
+    paymentMethods,
+    getClientById
   } = useData();
   
   const [collectingInvoices, setCollectingInvoices] = useState([]);
@@ -568,48 +571,138 @@ function InvoiceList() {
               )}
               
               <div className="grid gap-4">
-              {displayInvoices.map((invoice) => (
-                <div key={`${activeTab}-${invoice.id}`} className="card">
-                  <div className="card-content">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-4 mb-2">
-                          <h3 className="font-semibold text-lg">Invoice #{invoice.invoice_number || invoice.id}</h3>
-                          <InvoiceStatusBadge status={invoice.status} size="sm" />
+              {displayInvoices.map((invoice) => {
+                const client = getClientById(invoice.clientId);
+                const services = invoice.services || [];
+                const usePropertyGrouping = shouldUsePropertyGrouping(client, services);
+                
+                return (
+                  <div key={`${activeTab}-${invoice.id}`} className="card">
+                    <div className="card-content">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-4 mb-2">
+                            <h3 className="font-semibold text-lg">Invoice #{invoice.invoice_number || invoice.id}</h3>
+                            <InvoiceStatusBadge status={invoice.status} size="sm" />
+                          </div>
+                          <p className="text-gray-600 mb-1">{invoice.clientName || invoice.client_name}</p>
+                          <div className="flex gap-6 text-sm text-gray-600">
+                            <span><strong>Date:</strong> {invoice.date}</span>
+                            <span><strong>Due:</strong> {invoice.due_date || invoice.dueDate}</span>
+                            {activeTab === 'paid' && (invoice.paid_date || invoice.paidDate) && (
+                              <span><strong>Paid:</strong> {invoice.paid_date || invoice.paidDate}</span>
+                            )}
+                            <span><strong>Total:</strong> ${(invoice.total || 0).toFixed(2)}</span>
+                          </div>
                         </div>
-                        <p className="text-gray-600 mb-1">{invoice.clientName || invoice.client_name}</p>
-                        <div className="flex gap-6 text-sm text-gray-600">
-                          <span><strong>Date:</strong> {invoice.date}</span>
-                          <span><strong>Due:</strong> {invoice.due_date || invoice.dueDate}</span>
-                          {activeTab === 'paid' && (invoice.paid_date || invoice.paidDate) && (
-                            <span><strong>Paid:</strong> {invoice.paid_date || invoice.paidDate}</span>
-                          )}
-                          <span><strong>Total:</strong> ${(invoice.total || 0).toFixed(2)}</span>
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-3">
-                        <div className="flex flex-col sm:flex-row gap-2">
-                          <button
-                            onClick={() => navigate(`/invoicing/${invoice.id}`, { state: { invoiceData: invoice } })}
-                            className="btn btn-outline min-h-[44px] py-3 px-4 font-medium"
-                          >
-                            👁️ View
-                          </button>
-                          {invoice.status !== 'Paid' && (
+                        <div className="flex flex-col gap-3">
+                          <div className="flex flex-col sm:flex-row gap-2">
                             <button
-                              onClick={() => handleMarkPaid(invoice.id, invoice.invoice_number || invoice.id)}
-                              disabled={markingPaid[invoice.id]}
-                              className="btn btn-success min-h-[44px] py-3 px-4 font-medium"
+                              onClick={() => navigate(`/invoicing/${invoice.id}`, { state: { invoiceData: invoice } })}
+                              className="btn btn-outline min-h-[44px] py-3 px-4 font-medium"
                             >
-                              {markingPaid[invoice.id] ? '⏳ Processing...' : '✓ Mark Paid'}
+                              👁️ View
                             </button>
-                          )}
+                            {invoice.status !== 'Paid' && (
+                              <button
+                                onClick={() => handleMarkPaid(invoice.id, invoice.invoice_number || invoice.id)}
+                                disabled={markingPaid[invoice.id]}
+                                className="btn btn-success min-h-[44px] py-3 px-4 font-medium"
+                              >
+                                {markingPaid[invoice.id] ? '⏳ Processing...' : '✓ Mark Paid'}
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
+
+                      {/* Services Display */}
+                      {services && services.length > 0 && (
+                        <div className="mt-4 border-t border-gray-200 pt-4">
+                          <h4 className="font-semibold text-md mb-3">Services:</h4>
+                          
+                          {usePropertyGrouping && isMultiPropertyInvoice(services) ? (
+                            // Multi-property display using custom logic
+                            <div className="space-y-4">
+                              {Object.entries(groupServicesByProperty(services)).map(([propertyName, propertyServices]) => {
+                                const propertySubtotal = propertyServices.reduce((sum, item) => {
+                                  return sum + ((item.quantity || 1) * (item.rate || item.amount || 0));
+                                }, 0);
+                                
+                                return (
+                                  <div key={propertyName} className="border border-gray-300 rounded-lg p-3 bg-gray-50">
+                                    <div className="mb-3 pb-2 border-b border-gray-400">
+                                      <h5 className="text-md font-semibold text-gray-800">
+                                        === {propertyName} ===
+                                      </h5>
+                                    </div>
+                                    
+                                    <div className="space-y-2 mb-3">
+                                      {propertyServices.map((service, index) => (
+                                        <div key={index} className="border border-gray-200 rounded-md p-3 bg-white">
+                                          <div className="flex justify-between items-center">
+                                            <div className="flex-1">
+                                              <h6 className="font-medium">{service.description}</h6>
+                                              <p className="text-sm text-gray-600">
+                                                Qty: {service.quantity || 1} × ${(service.rate || service.amount || 0).toFixed(2)} = ${((service.quantity || 1) * (service.rate || service.amount || 0)).toFixed(2)}
+                                              </p>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                    
+                                    <div className="pt-2 border-t border-gray-300">
+                                      <div className="flex justify-end">
+                                        <div className="text-right">
+                                          <p className="text-sm text-gray-600">Property Subtotal:</p>
+                                          <p className="text-md font-semibold text-green-600">
+                                            ${propertySubtotal.toFixed(2)}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                              
+                              {/* Total for All Properties */}
+                              {Object.keys(groupServicesByProperty(services)).length > 1 && (
+                                <div className="border-2 border-green-500 rounded-lg p-3 bg-green-50">
+                                  <div className="flex justify-between items-center">
+                                    <h5 className="text-lg font-bold text-green-800">
+                                      TOTAL FOR ALL PROPERTIES:
+                                    </h5>
+                                    <p className="text-xl font-bold text-green-800">
+                                      ${(invoice.total || 0).toFixed(2)}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            // Standard flat service list
+                            <div className="space-y-2">
+                              {services.map((service, index) => (
+                                <div key={index} className="border border-gray-200 rounded-md p-3 bg-gray-50">
+                                  <div className="flex justify-between items-center">
+                                    <div className="flex-1">
+                                      <h6 className="font-medium">{service.description}</h6>
+                                      <p className="text-sm text-gray-600">
+                                        Qty: {service.quantity || 1} × ${(service.rate || service.amount || 0).toFixed(2)} = ${((service.quantity || 1) * (service.rate || service.amount || 0)).toFixed(2)}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               
               {displayInvoices.length === 0 && (
                 <div className="text-center py-8 text-gray-500">
@@ -1203,7 +1296,7 @@ function InvoiceDetail() {
               {((invoice.status === 'Sent' || invoice.status === 'sent' || 
                 invoice.status === 'Paid' || invoice.status === 'paid')) && (
                 <button
-                  onClick={() => window.open(`https://jasons-operations-system-clean-production.up.railway.app/invoice/${invoice.invoice_number || invoice.id}/view`, '_blank')}
+                  onClick={() => window.open(`/invoice/${invoice.invoice_number || invoice.id}/view`, '_blank')}
                   className="btn btn-outline"
                 >
                   📄 Download PDF

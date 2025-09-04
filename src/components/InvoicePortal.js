@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useData } from '../contexts/DataContext';
+import { isMultiPropertyInvoice, groupServicesByProperty } from '../utils/multiPropertyHelpers';
+import { shouldUsePropertyGrouping } from '../utils/propertyGrouping';
 
 // InvoicePortal - Public-facing invoice display for clients
 function InvoicePortal() {
@@ -115,6 +117,27 @@ function InvoicePortal() {
   // Check if invoice is paid
   const isPaid = invoice.status === 'Paid' || invoice.status === 'paid';
   const paymentDate = invoice.paid_date || invoice.paidDate;
+  
+  // Get services and check if multi-property using same logic as other components
+  const services = invoice.services || invoice.line_items || [];
+  const usePropertyGrouping = shouldUsePropertyGrouping(client, services);
+  const isMultiProperty = isMultiPropertyInvoice(services);
+  
+  // DEBUG: Log invoice and services data
+  console.log('🔍 InvoicePortal DEBUG:');
+  console.log('- Invoice data:', invoice);
+  console.log('- Client data:', client);
+  console.log('- Services array:', services);
+  console.log('- Services length:', services.length);
+  console.log('- Should use property grouping?', usePropertyGrouping);
+  console.log('- Is multi-property?', isMultiProperty);
+  console.log('- Final grouping decision:', usePropertyGrouping && isMultiProperty);
+  
+  if (isMultiProperty) {
+    const groupedServices = groupServicesByProperty(services);
+    console.log('- Grouped services:', groupedServices);
+    console.log('- Property groups:', Object.keys(groupedServices));
+  }
 
   return (
     <>
@@ -289,31 +312,101 @@ function InvoicePortal() {
                 </div>
               </div>
 
-              {/* Services Table */}
+              {/* Services Display */}
               <div className="mb-8 page-break-avoid">
                 <h3 className="font-semibold text-lg mb-4">Services:</h3>
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                  <table className="w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="text-left p-4 font-medium text-gray-900">Description</th>
-                        <th className="text-center p-4 font-medium text-gray-900">Qty</th>
-                        <th className="text-right p-4 font-medium text-gray-900">Rate</th>
-                        <th className="text-right p-4 font-medium text-gray-900">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(invoice.services || invoice.line_items || []).map((service, index) => (
-                        <tr key={index} className="border-t border-gray-200">
-                          <td className="p-4">{service.description}</td>
-                          <td className="p-4 text-center">{service.quantity}</td>
-                          <td className="p-4 text-right">${(service.rate || 0).toFixed(2)}</td>
-                          <td className="p-4 text-right font-medium">${(service.amount || 0).toFixed(2)}</td>
+                
+                {usePropertyGrouping && isMultiProperty ? (
+                  // Multi-property display
+                  <div className="space-y-6">
+                    {Object.entries(groupServicesByProperty(services)).map(([propertyName, propertyServices]) => {
+                      const propertySubtotal = propertyServices.reduce((sum, item) => {
+                        return sum + ((item.quantity || 1) * (item.rate || item.amount || 0));
+                      }, 0);
+                      
+                      return (
+                        <div key={propertyName} className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                          {/* Property Header */}
+                          <div className="mb-4 pb-3 border-b-2 border-green-500">
+                            <h4 className="text-xl font-bold text-gray-800 text-center">
+                              === {propertyName} ===
+                            </h4>
+                          </div>
+                          
+                          {/* Property Services Table */}
+                          <div className="border border-gray-200 rounded-lg overflow-hidden mb-4">
+                            <table className="w-full">
+                              <thead className="bg-white">
+                                <tr>
+                                  <th className="text-left p-3 font-medium text-gray-900 border-b">Description</th>
+                                  <th className="text-center p-3 font-medium text-gray-900 border-b">Qty</th>
+                                  <th className="text-right p-3 font-medium text-gray-900 border-b">Rate</th>
+                                  <th className="text-right p-3 font-medium text-gray-900 border-b">Amount</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {propertyServices.map((service, index) => (
+                                  <tr key={index} className="border-t border-gray-200">
+                                    <td className="p-3">{service.description}</td>
+                                    <td className="p-3 text-center">{service.quantity || 1}</td>
+                                    <td className="p-3 text-right">${(service.rate || service.amount || 0).toFixed(2)}</td>
+                                    <td className="p-3 text-right font-medium">${((service.quantity || 1) * (service.rate || service.amount || 0)).toFixed(2)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          
+                          {/* Property Subtotal */}
+                          <div className="flex justify-end bg-gray-100 p-3 rounded border-t-2 border-gray-400">
+                            <div className="text-right">
+                              <p className="text-sm font-medium text-gray-700">Property Subtotal:</p>
+                              <p className="text-lg font-bold text-green-600">
+                                ${propertySubtotal.toFixed(2)}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    
+                    {/* Total for All Properties */}
+                    {Object.keys(groupServicesByProperty(services)).length > 1 && (
+                      <div className="border-4 border-green-500 rounded-lg p-6 bg-green-50 text-center">
+                        <h4 className="text-2xl font-bold text-green-800 mb-2">
+                          TOTAL FOR ALL PROPERTIES:
+                        </h4>
+                        <p className="text-3xl font-bold text-green-800">
+                          ${(invoice.total || 0).toFixed(2)}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  // Standard single-property table
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="text-left p-4 font-medium text-gray-900">Description</th>
+                          <th className="text-center p-4 font-medium text-gray-900">Qty</th>
+                          <th className="text-right p-4 font-medium text-gray-900">Rate</th>
+                          <th className="text-right p-4 font-medium text-gray-900">Amount</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {services.map((service, index) => (
+                          <tr key={index} className="border-t border-gray-200">
+                            <td className="p-4">{service.description}</td>
+                            <td className="p-4 text-center">{service.quantity}</td>
+                            <td className="p-4 text-right">${(service.rate || 0).toFixed(2)}</td>
+                            <td className="p-4 text-right font-medium">${(service.amount || 0).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
               {/* Notes Section */}
