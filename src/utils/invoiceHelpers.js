@@ -32,8 +32,8 @@ export async function createCollectingInvoice(clientId, clientData) {
     const invoiceData = {
       client_id: clientId,
       client_name: clientData.name,
-      date: today.toISOString().split('T')[0],
-      due_date: dueDate.toISOString().split('T')[0],
+      date: today.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+      due_date: dueDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
       status: 'collecting',
       subtotal: 0.0,
       tax: 0.0,
@@ -95,7 +95,7 @@ export async function sendCollectingInvoice(invoiceId, clientData) {
     }
 
     // Update invoice status to sent
-    const sentDate = new Date().toISOString().split('T')[0];
+    const sentDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
     await updateInvoiceStatus(invoiceId, 'sent', { sent_date: sentDate });
 
     // Get the invoice again after status update to check if totals changed
@@ -132,7 +132,7 @@ export async function markInvoicePaid(invoiceId, paymentMethod, receiptMethod = 
       throw new Error('Invoice is already paid');
     }
 
-    const paidDate = new Date().toISOString().split('T')[0];
+    const paidDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
     const updates = {
       paid_date: paidDate,
       payment_method: paymentMethod,
@@ -199,7 +199,7 @@ export async function markInvoicePaidWithReceipt(invoiceId, paymentMethod) {
         if (emailResult.success) {
           // Update receipt sent date
           await updateInvoiceStatus(invoiceId, 'paid', { 
-            receipt_sent_date: new Date().toISOString().split('T')[0]
+            receipt_sent_date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
           });
           
           createEmailNotification(
@@ -337,8 +337,8 @@ export async function duplicateInvoice(originalInvoiceId, overrides = {}) {
     const newInvoiceData = {
       client_id: originalInvoice.client_id,
       client_name: originalInvoice.client_name,
-      date: today.toISOString().split('T')[0],
-      due_date: dueDate.toISOString().split('T')[0],
+      date: today.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+      due_date: dueDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
       status: 'collecting',
       subtotal: originalInvoice.subtotal,
       tax: originalInvoice.tax,
@@ -393,7 +393,7 @@ export async function getOverdueInvoices() {
  */
 export async function markReceiptSent(invoiceId, method = 'email') {
   try {
-    const sentDate = new Date().toISOString().split('T')[0];
+    const sentDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
     const updates = {
       receipt_sent_date: sentDate,
       receipt_delivery_method: method

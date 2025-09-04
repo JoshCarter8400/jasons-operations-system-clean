@@ -77,6 +77,26 @@ const cleanServiceDescription = (description) => {
   return description.replace(/\s*\([^)]+\)\s*$/, '').trim();
 };
 
+// Helper function to format date from YYYY-MM-DD to MM/DD/YYYY
+const formatDateForEmail = (dateString) => {
+  if (!dateString || dateString === 'Not available') {
+    return 'Not available';
+  }
+  
+  // If it's already in MM/DD/YYYY format, return as is
+  if (dateString.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+    return dateString;
+  }
+  
+  // Convert YYYY-MM-DD to MM/DD/YYYY
+  if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    const [year, month, day] = dateString.split('-');
+    return `${month}/${day}/${year}`;
+  }
+  
+  return dateString;
+};
+
 // Helper function to group services by property
 const groupServicesByProperty = (lineItems) => {
   const groups = {};
@@ -201,12 +221,8 @@ const createInvoiceEmailHTML = (invoice, client, businessInfo) => {
           <h2 style="margin: 0; color: #1f2937; font-size: 24px;">Invoice #${
             invoice.id
           }</h2>
-          <p style="margin: 5px 0; color: #6b7280;">Date: ${new Date(
-            invoice.date || Date.now()
-          ).toLocaleDateString()}</p>
-          <p style="margin: 5px 0; color: #6b7280;">Due Date: ${new Date(
-            invoice.due_date || invoice.dueDate || Date.now()
-          ).toLocaleDateString()}</p>
+          <p style="margin: 5px 0; color: #6b7280;">Date: ${formatDateForEmail(invoice.date)}</p>
+          <p style="margin: 5px 0; color: #6b7280;">Due Date: ${formatDateForEmail(invoice.due_date || invoice.dueDate)}</p>
         </div>
         <div style="text-align: right;">
           <p style="margin: 0; color: #1f2937; font-weight: bold;">From:</p>
@@ -409,9 +425,7 @@ const createReceiptEmailHTML = (invoice, client, businessInfo, paymentMethod) =>
       <div style="display: flex; justify-content: space-between; margin-bottom: 30px;">
         <div>
           <p style="margin: 0; color: #1f2937; font-weight: bold;">Payment Date:</p>
-          <p style="margin: 5px 0; color: #6b7280; font-size: 18px;">${invoice.paid_date || invoice.paidDate ? new Date(invoice.paid_date || invoice.paidDate + 'T12:00:00').toLocaleDateString('en-US', { timeZone: 'America/New_York' }) : new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' })}</p>
-          <p style="margin: 15px 0 5px 0; color: #1f2937; font-weight: bold;">Payment Method:</p>
-          <p style="margin: 5px 0; color: #6b7280; font-size: 18px;">${paymentMethod}</p>
+          <p style="margin: 5px 0; color: #6b7280; font-size: 18px;">${formatDateForEmail(invoice.paid_date || invoice.paidDate)}</p>
         </div>
         <div style="text-align: right;">
           <p style="margin: 0; color: #1f2937; font-weight: bold;">Amount Paid:</p>

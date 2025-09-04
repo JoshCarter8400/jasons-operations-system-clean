@@ -348,7 +348,7 @@ export const DataProvider = ({ children }) => {
     try {
       const newClient = await dbCreateClient({
         ...clientData,
-        createdDate: new Date().toISOString().split('T')[0],
+        createdDate: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
         status: 'Active'
       });
       // Update local state
@@ -482,6 +482,7 @@ export const DataProvider = ({ children }) => {
     // Cache business info once at the start of the function
     const currentBusinessInfo = {
       ...businessSettings.businessInfo,
+      phone: businessSettings.businessInfo?.phone || process.env.REACT_APP_JASON_PHONE_NUMBER || 'Phone not configured',
       serviceAreas: businessSettings.serviceAreas,
       paymentMethods: businessSettings.paymentMethods
     };
@@ -490,7 +491,7 @@ export const DataProvider = ({ children }) => {
     if (invoice) {
       updateInvoice(id, {
         status: 'Paid',
-        paidDate: new Date().toISOString().split('T')[0],
+        paidDate: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
         paymentMethod: paymentMethod || invoice.paymentMethod
       });
       
@@ -503,7 +504,7 @@ export const DataProvider = ({ children }) => {
         // Send payment receipt email
         if (client.email) {
           const emailResult = await sendPaymentReceiptEmail(
-            { ...invoice, status: 'Paid', paidDate: new Date().toISOString().split('T')[0] },
+            { ...invoice, status: 'Paid', paidDate: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) },
             client,
             currentBusinessInfo,
             paymentMethod || invoice.paymentMethod
@@ -536,6 +537,7 @@ export const DataProvider = ({ children }) => {
     // Cache business info once at the start of the function
     const currentBusinessInfo = {
       ...businessSettings.businessInfo,
+      phone: businessSettings.businessInfo?.phone || process.env.REACT_APP_JASON_PHONE_NUMBER || 'Phone not configured',
       serviceAreas: businessSettings.serviceAreas,
       paymentMethods: businessSettings.paymentMethods
     };
@@ -551,12 +553,12 @@ export const DataProvider = ({ children }) => {
         // Update in-memory invoice
         updateInvoice(id, {
           status: 'Sent',
-          sentDate: new Date().toISOString().split('T')[0]
+          sentDate: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
         });
       }
     } else {
       // Update database invoice status and clear modified_since_sent flag
-      await dbUpdateInvoiceStatus(parseInt(id), 'sent', new Date().toISOString().split('T')[0]);
+      await dbUpdateInvoiceStatus(parseInt(id), 'sent', new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }));
       // Refresh to get updated invoice
       const refreshed = await getAllDatabaseInvoices();
       invoice = refreshed.find(inv => inv.id === parseInt(id));
@@ -568,7 +570,7 @@ export const DataProvider = ({ children }) => {
                       clients.find(c => c.id === invoice.clientId);
         if (client && client.email) {
           const emailResult = await sendInvoiceEmail(
-            { ...invoice, status: 'Sent', sentDate: new Date().toISOString().split('T')[0] },
+            { ...invoice, status: 'Sent', sentDate: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) },
             client,
             currentBusinessInfo
           );
