@@ -38,14 +38,14 @@ function CollectingInvoiceEditor() {
   const [newService, setNewService] = useState({
     description: '',
     quantity: 1,
-    rate: 0
+    rate: ''
   });
 
   // Edit service form
   const [editService, setEditService] = useState({
     description: '',
     quantity: 1,
-    rate: 0
+    rate: ''
   });
 
   useEffect(() => {
@@ -98,7 +98,13 @@ function CollectingInvoiceEditor() {
         return;
       }
 
-      const updatedInvoice = await addServiceToCollectingInvoice(parseInt(clientId), newService);
+      // Parse rate to ensure it's a number for the API
+      const serviceWithParsedRate = {
+        ...newService,
+        rate: parseFloat(newService.rate) || 0
+      };
+
+      const updatedInvoice = await addServiceToCollectingInvoice(parseInt(clientId), serviceWithParsedRate);
       
       // Update local state immediately
       setInvoice(updatedInvoice);
@@ -107,7 +113,7 @@ function CollectingInvoiceEditor() {
       setNewService({
         description: '',
         quantity: 1,
-        rate: 0
+        rate: ''
       });
     } catch (error) {
       console.error('Failed to add service:', error);
@@ -126,14 +132,20 @@ function CollectingInvoiceEditor() {
         return;
       }
 
-      const updatedInvoice = await updateServiceInCollectingInvoice(invoice.id, lineItemId, editService);
+      // Parse rate to ensure it's a number for the API
+      const serviceWithParsedRate = {
+        ...editService,
+        rate: parseFloat(editService.rate) || 0
+      };
+
+      const updatedInvoice = await updateServiceInCollectingInvoice(invoice.id, lineItemId, serviceWithParsedRate);
       
       // Update local state immediately
       setInvoice(updatedInvoice);
       
       // Reset editing state
       setEditing({});
-      setEditService({ description: '', quantity: 1, rate: 0 });
+      setEditService({ description: '', quantity: 1, rate: '' });
     } catch (error) {
       console.error('Failed to edit service:', error);
       alert('Failed to edit service. Please try again.');
@@ -312,7 +324,7 @@ function CollectingInvoiceEditor() {
 
   const cancelEditing = () => {
     setEditing({});
-    setEditService({ description: '', quantity: 1, rate: 0 });
+    setEditService({ description: '', quantity: 1, rate: '' });
   };
 
   if (loading) {
@@ -445,7 +457,7 @@ function CollectingInvoiceEditor() {
                               onChange={(e) => {
                                 const value = e.target.value;
                                 if (value === '' || /^\d*\.?\d*$/.test(value)) {
-                                  setEditService({...editService, rate: parseFloat(value) || 0});
+                                  setEditService({...editService, rate: value});
                                 }
                               }}
                               onFocus={(e) => e.target.select()}
@@ -455,7 +467,7 @@ function CollectingInvoiceEditor() {
                           </div>
                           <div className="md:col-span-2">
                             <div className="p-3 bg-gray-50 border border-gray-300 rounded-md">
-                              <strong>${((editService.quantity || 0) * (editService.rate || 0)).toFixed(2)}</strong>
+                              <strong>${((editService.quantity || 0) * (parseFloat(editService.rate) || 0)).toFixed(2)}</strong>
                             </div>
                           </div>
                           <div className="md:col-span-2">
@@ -565,7 +577,7 @@ function CollectingInvoiceEditor() {
                   onChange={(e) => {
                     const value = e.target.value;
                     if (value === '' || /^\d*\.?\d*$/.test(value)) {
-                      setNewService({...newService, rate: parseFloat(value) || 0});
+                      setNewService({...newService, rate: value});
                     }
                   }}
                   onFocus={(e) => e.target.select()}
@@ -575,7 +587,7 @@ function CollectingInvoiceEditor() {
               </div>
               <div className="md:col-span-2">
                 <div className="p-3 bg-gray-50 border border-gray-300 rounded-md">
-                  <strong>${((newService.quantity || 0) * (newService.rate || 0)).toFixed(2)}</strong>
+                  <strong>${((newService.quantity || 0) * (parseFloat(newService.rate) || 0)).toFixed(2)}</strong>
                 </div>
               </div>
               <div className="md:col-span-2">

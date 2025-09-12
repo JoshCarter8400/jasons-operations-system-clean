@@ -174,6 +174,7 @@ function MarkServiceComplete({
                     className="w-full p-3 border border-gray-300 rounded-md text-base focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     style={{ minHeight: '44px' }}
                     placeholder="0.00"
+                    inputMode="decimal"
                     required
                   />
                 </div>
