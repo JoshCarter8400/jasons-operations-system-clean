@@ -1231,6 +1231,11 @@ export const DataProvider = ({ children }) => {
         ORDER BY i.date DESC, i.id DESC
       `);
 
+      // Get current date in Eastern timezone for overdue calculations
+      const todayString = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      const today = new Date(todayString);
+      today.setHours(0, 0, 0, 0); // Set to start of day for accurate comparison
+
       // Convert database format to UI format
       const invoices = await Promise.all(
         result.rows.map(async (invoice) => {
@@ -1239,6 +1244,32 @@ export const DataProvider = ({ children }) => {
             'SELECT * FROM invoice_line_items WHERE invoice_id = ? ORDER BY created_at',
             [invoice.id]
           );
+
+          // Calculate overdue status and days overdue
+          let isOverdue = false;
+          let daysOverdue = 0;
+          
+          if (invoice.status === 'sent' && invoice.due_date) {
+            // Parse due date (format: YYYY-MM-DD)
+            const dueDate = new Date(invoice.due_date);
+            dueDate.setHours(0, 0, 0, 0);
+            
+            // Add 2 days grace period - invoice becomes overdue on day 3 after due date
+            const gracePeriodEnd = new Date(dueDate);
+            gracePeriodEnd.setDate(dueDate.getDate() + 2);
+            
+            // Invoice becomes overdue the day AFTER grace period ends
+            const overdueThreshold = new Date(gracePeriodEnd);
+            overdueThreshold.setDate(gracePeriodEnd.getDate() + 1);
+            
+            // Check if today is at or past the overdue threshold
+            if (today >= overdueThreshold) {
+              isOverdue = true;
+              // Calculate days overdue from the overdue threshold
+              const timeDiff = today.getTime() - overdueThreshold.getTime();
+              daysOverdue = Math.floor(timeDiff / (1000 * 60 * 60 * 24)) + 1; // Add 1 to count today as day 1
+            }
+          }
 
           return {
             id: invoice.id,
@@ -1256,7 +1287,9 @@ export const DataProvider = ({ children }) => {
             sentDate: invoice.sent_date,
             paidDate: invoice.paid_date,
             paymentMethod: invoice.payment_method,
-            modifiedSinceSent: invoice.modified_since_sent
+            modifiedSinceSent: invoice.modified_since_sent,
+            isOverdue: isOverdue,
+            daysOverdue: daysOverdue
           };
         })
       );

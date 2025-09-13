@@ -305,6 +305,20 @@ function InvoiceList() {
       }
     }
 
+    // Sort sent invoices: overdue first, then by due date
+    if (activeTab === 'sent') {
+      displayInvoices = displayInvoices.sort((a, b) => {
+        // Both overdue or both not overdue - sort by due date
+        if (a.isOverdue === b.isOverdue) {
+          const dateA = new Date(a.due_date || a.dueDate);
+          const dateB = new Date(b.due_date || b.dueDate);
+          return dateA - dateB;
+        }
+        // Overdue invoices come first
+        return b.isOverdue ? 1 : -1;
+      });
+    }
+
     return displayInvoices;
   };
 
@@ -477,6 +491,47 @@ function InvoiceList() {
           {/* Sent/Paid Invoices View */}
           {(activeTab === 'sent' || activeTab === 'paid') && (
             <div>
+              {/* Sent Invoices Overdue Summary */}
+              {activeTab === 'sent' && (
+                <div className="mb-6">
+                  {(() => {
+                    const sentInvoices = databaseInvoices.filter(i => i.status === 'Sent');
+                    const overdueCount = sentInvoices.filter(i => i.isOverdue).length;
+                    const totalSent = sentInvoices.length;
+                    
+                    if (totalSent > 0) {
+                      return (
+                        <div className={`p-4 rounded-lg border-l-4 ${
+                          overdueCount > 0 
+                            ? 'bg-red-50 border-red-400' 
+                            : 'bg-blue-50 border-blue-400'
+                        }`}>
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div>
+                              {overdueCount > 0 ? (
+                                <p className="text-red-800 font-semibold">
+                                  ⚠️ {overdueCount} of {totalSent} sent invoices are overdue
+                                </p>
+                              ) : (
+                                <p className="text-blue-800 font-semibold">
+                                  ✅ All {totalSent} sent invoices are current
+                                </p>
+                              )}
+                            </div>
+                            {overdueCount > 0 && (
+                              <div className="text-red-700 text-sm">
+                                Overdue invoices are sorted to the top
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+              )}
+              
               {/* Paid Invoice Filters - Only show for paid tab */}
               {activeTab === 'paid' && (
                 <div className="mb-6">
@@ -575,24 +630,47 @@ function InvoiceList() {
                 const client = getClientById(invoice.clientId);
                 const services = invoice.services || [];
                 const usePropertyGrouping = shouldUsePropertyGrouping(client, services);
+                const isOverdue = activeTab === 'sent' && invoice.isOverdue;
                 
                 return (
-                  <div key={`${activeTab}-${invoice.id}`} className="card">
+                  <div key={`${activeTab}-${invoice.id}`} className={`card ${
+                    isOverdue ? 'border-red-500 bg-red-50' : ''
+                  }`}>
                     <div className="card-content">
                       <div className="flex justify-between items-start mb-4">
                         <div className="flex-1">
-                          <div className="flex items-center gap-4 mb-2">
+                          <div className="flex items-center gap-4 mb-2 flex-wrap">
                             <h3 className="font-semibold text-lg">Invoice #{invoice.invoice_number || invoice.id}</h3>
                             <InvoiceStatusBadge status={invoice.status} size="sm" />
+                            {isOverdue && (
+                              <span className="bg-red-100 text-red-800 px-3 py-1 rounded-full text-xs font-semibold border border-red-300">
+                                OVERDUE - {invoice.daysOverdue} DAYS
+                              </span>
+                            )}
                           </div>
                           <p className="text-gray-600 mb-1">{invoice.clientName || invoice.client_name}</p>
-                          <div className="flex gap-6 text-sm text-gray-600">
+                          <div className="flex gap-6 text-sm text-gray-600 flex-wrap">
                             <span><strong>Date:</strong> {invoice.date}</span>
-                            <span><strong>Due:</strong> {invoice.due_date || invoice.dueDate}</span>
+                            <span>
+                              <strong>Due:</strong> 
+                              <span className={isOverdue ? 'text-red-600 font-semibold ml-1' : 'ml-1'}>
+                                {invoice.due_date || invoice.dueDate}
+                              </span>
+                            </span>
                             {activeTab === 'paid' && (invoice.paid_date || invoice.paidDate) && (
                               <span><strong>Paid:</strong> {invoice.paid_date || invoice.paidDate}</span>
                             )}
-                            <span><strong>Total:</strong> ${(invoice.total || 0).toFixed(2)}</span>
+                            <span>
+                              <strong>Total:</strong> 
+                              <span className={isOverdue ? 'text-red-600 font-semibold ml-1' : 'ml-1'}>
+                                ${(invoice.total || 0).toFixed(2)}
+                              </span>
+                              {isOverdue && (
+                                <span className="bg-red-600 text-white px-2 py-1 rounded text-xs font-semibold ml-2">
+                                  OVERDUE
+                                </span>
+                              )}
+                            </span>
                           </div>
                         </div>
                         <div className="flex flex-col gap-3">
