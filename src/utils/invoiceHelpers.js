@@ -9,6 +9,16 @@ import {
 } from './databaseHelpers.js';
 
 /**
+ * Gets a due date one week from now
+ * @returns {string} Due date in YYYY-MM-DD format
+ */
+const getDueDateOneWeekFromNow = () => {
+  const date = new Date();
+  date.setDate(date.getDate() + 7);
+  return date.toISOString().split('T')[0];
+};
+
+/**
  * Creates or finds a collecting invoice for a client
  * A collecting invoice accumulates multiple services before being sent
  * @param {number} clientId - Client ID
@@ -26,14 +36,12 @@ export async function createCollectingInvoice(clientId, clientData) {
 
     // Create new collecting invoice
     const today = new Date();
-    const dueDate = new Date();
-    dueDate.setDate(today.getDate() + 30); // 30 days payment terms
 
     const invoiceData = {
       client_id: clientId,
       client_name: clientData.name,
       date: today.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
-      due_date: dueDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+      due_date: getDueDateOneWeekFromNow(),
       status: 'collecting',
       subtotal: 0.0,
       tax: 0.0,
@@ -94,9 +102,13 @@ export async function sendCollectingInvoice(invoiceId, clientData) {
       throw new Error('Cannot send invoice with zero total');
     }
 
-    // Update invoice status to sent
+    // Update invoice status to sent with new due date
     const sentDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-    await updateInvoiceStatus(invoiceId, 'sent', { sent_date: sentDate });
+    const newDueDate = getDueDateOneWeekFromNow();
+    await updateInvoiceStatus(invoiceId, 'sent', { 
+      sent_date: sentDate,
+      due_date: newDueDate 
+    });
 
     // Get the invoice again after status update to check if totals changed
     const updatedInvoice = await getInvoiceWithLineItems(invoiceId);
@@ -331,14 +343,12 @@ export async function duplicateInvoice(originalInvoiceId, overrides = {}) {
 
     // Create new invoice data
     const today = new Date();
-    const dueDate = new Date();
-    dueDate.setDate(today.getDate() + 30);
 
     const newInvoiceData = {
       client_id: originalInvoice.client_id,
       client_name: originalInvoice.client_name,
       date: today.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
-      due_date: dueDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+      due_date: getDueDateOneWeekFromNow(),
       status: 'collecting',
       subtotal: originalInvoice.subtotal,
       tax: originalInvoice.tax,
