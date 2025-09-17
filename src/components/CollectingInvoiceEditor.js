@@ -1,10 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useData } from '../contexts/DataContext';
-// import { formatDate } from '../utils/dateUtils'; // Not currently used
+import { getTodayEasternTime } from '../utils/dateUtils';
 import { InvoiceStatusBadge } from './InvoiceStatusBadge';
 import PropertyGroupedInvoiceDisplay from './PropertyGroupedInvoiceDisplay';
 import { shouldUsePropertyGrouping } from '../utils/propertyGrouping';
+
+// Helper function to format service description with date
+const formatServiceDescription = (description, serviceDate) => {
+  if (serviceDate) {
+    const date = new Date(serviceDate);
+    const formattedDate = date.toLocaleDateString('en-US');
+    return `${description} (performed ${formattedDate})`;
+  } else {
+    return `${description} (Date not recorded)`;
+  }
+};
 
 function CollectingInvoiceEditor() {
   const { 
@@ -38,14 +49,16 @@ function CollectingInvoiceEditor() {
   const [newService, setNewService] = useState({
     description: '',
     quantity: 1,
-    rate: ''
+    rate: '',
+    service_date: getTodayEasternTime()
   });
 
   // Edit service form
   const [editService, setEditService] = useState({
     description: '',
     quantity: 1,
-    rate: ''
+    rate: '',
+    service_date: ''
   });
 
   useEffect(() => {
@@ -113,7 +126,8 @@ function CollectingInvoiceEditor() {
       setNewService({
         description: '',
         quantity: 1,
-        rate: ''
+        rate: '',
+        service_date: getTodayEasternTime()
       });
     } catch (error) {
       console.error('Failed to add service:', error);
@@ -317,14 +331,15 @@ function CollectingInvoiceEditor() {
     setEditService({
       description: lineItem.description,
       quantity: lineItem.quantity,
-      rate: lineItem.rate
+      rate: lineItem.rate,
+      service_date: lineItem.service_date || ''
     });
     setEditing({ [lineItem.id]: 'editing' });
   };
 
   const cancelEditing = () => {
     setEditing({});
-    setEditService({ description: '', quantity: 1, rate: '' });
+    setEditService({ description: '', quantity: 1, rate: '', service_date: '' });
   };
 
   if (loading) {
@@ -466,6 +481,15 @@ function CollectingInvoiceEditor() {
                             />
                           </div>
                           <div className="md:col-span-2">
+                            <label className="block text-sm font-medium mb-2">Service Date</label>
+                            <input
+                              type="date"
+                              value={editService.service_date}
+                              onChange={(e) => setEditService({...editService, service_date: e.target.value})}
+                              className="w-full p-3 border border-gray-300 rounded-md"
+                            />
+                          </div>
+                          <div className="md:col-span-2">
                             <div className="p-3 bg-gray-50 border border-gray-300 rounded-md">
                               <strong>${((editService.quantity || 0) * (parseFloat(editService.rate) || 0)).toFixed(2)}</strong>
                             </div>
@@ -491,7 +515,7 @@ function CollectingInvoiceEditor() {
                       ) : (
                         <div className="flex justify-between items-center">
                           <div className="flex-1">
-                            <h4 className="font-medium">{lineItem.description}</h4>
+                            <h4 className="font-medium">{formatServiceDescription(lineItem.description, lineItem.service_date)}</h4>
                             <p className="text-sm text-gray-600">
                               Qty: {lineItem.quantity} × ${lineItem.rate.toFixed(2)} = ${(lineItem.quantity * lineItem.rate).toFixed(2)}
                             </p>
@@ -583,6 +607,15 @@ function CollectingInvoiceEditor() {
                   onFocus={(e) => e.target.select()}
                   className="w-full p-3 border border-gray-300 rounded-md"
                   placeholder="0.00"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-2">Service Date</label>
+                <input
+                  type="date"
+                  value={newService.service_date}
+                  onChange={(e) => setNewService({...newService, service_date: e.target.value})}
+                  className="w-full p-3 border border-gray-300 rounded-md"
                 />
               </div>
               <div className="md:col-span-2">

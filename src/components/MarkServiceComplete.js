@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useData } from '../contexts/DataContext';
+import { getTodayEasternTime } from '../utils/dateUtils';
 
 /**
  * MarkServiceComplete Component
@@ -20,7 +21,8 @@ function MarkServiceComplete({
     description: '',
     rate: '',
     quantity: 1,
-    notes: ''
+    notes: '',
+    serviceDate: getTodayEasternTime() // Default to today (Eastern Time)
   });
 
   // Get client info
@@ -33,7 +35,8 @@ function MarkServiceComplete({
         description: appointment.service_type || client.serviceType || client.service_type || 'Service',
         rate: parseFloat(client.price?.replace(/[^0-9.]/g, '') || '0'),
         quantity: 1,
-        notes: appointment.notes || ''
+        notes: appointment.notes || '',
+        serviceDate: getTodayEasternTime() // Default to today (Eastern Time), but editable
       });
     }
     setShowConfirmDialog(true);
@@ -54,7 +57,7 @@ function MarkServiceComplete({
         description: serviceDetails.description,
         rate: parseFloat(serviceDetails.rate) || 0,
         quantity: parseFloat(serviceDetails.quantity) || 1,
-        completedDate: new Date().toISOString().split('T')[0]
+        service_date: serviceDetails.serviceDate
       });
 
       // Close dialog and notify parent component
@@ -159,6 +162,21 @@ function MarkServiceComplete({
                 />
               </div>
 
+              {/* Service Date */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Service Date *
+                </label>
+                <input
+                  type="date"
+                  value={serviceDetails.serviceDate}
+                  onChange={(e) => setServiceDetails(prev => ({ ...prev, serviceDate: e.target.value }))}
+                  className="w-full p-3 border border-gray-300 rounded-md text-base focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  style={{ minHeight: '44px' }}
+                  required
+                />
+              </div>
+
               {/* Rate and Quantity */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -231,7 +249,7 @@ function MarkServiceComplete({
               </button>
               <button
                 onClick={handleConfirmComplete}
-                disabled={isProcessing || !serviceDetails.description || !serviceDetails.rate}
+                disabled={isProcessing || !serviceDetails.description || !serviceDetails.rate || !serviceDetails.serviceDate}
                 className="btn btn-primary w-full sm:w-auto min-h-[44px] py-3 px-4 text-base sm:text-lg bg-green-600 hover:bg-green-700 border-green-600 hover:border-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isProcessing ? (

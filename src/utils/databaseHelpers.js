@@ -879,9 +879,9 @@ export async function getInvoiceWithLineItems(invoiceId) {
     // Get line items
     const lineItemsResult = await db.execute({
       sql: `
-        SELECT id, description, quantity, rate, amount, created_at 
-        FROM invoice_line_items 
-        WHERE invoice_id = ? 
+        SELECT id, description, quantity, rate, amount, service_date, created_at
+        FROM invoice_line_items
+        WHERE invoice_id = ?
         ORDER BY created_at
       `,
       args: [invoiceId]
@@ -955,21 +955,33 @@ export async function getClientInvoices(clientId, status = null) {
  */
 export async function insertInvoiceLineItem(invoiceId, lineItemData) {
   try {
+    console.log('🔍 DEBUG: insertInvoiceLineItem received lineItemData:', lineItemData);
+
     const db = createLibSQLClient(config);
-    
+
     const result = await db.execute({
       sql: `
-        INSERT INTO invoice_line_items (invoice_id, description, quantity, rate, amount)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO invoice_line_items (invoice_id, description, quantity, rate, amount, service_date)
+        VALUES (?, ?, ?, ?, ?, ?)
       `,
       args: [
         invoiceId,
         lineItemData.description,
         lineItemData.quantity || 1.0,
         lineItemData.rate,
-        lineItemData.amount
+        lineItemData.amount,
+        lineItemData.service_date || null
       ]
     });
+
+    console.log('🔍 DEBUG: Inserting with args:', [
+      invoiceId,
+      lineItemData.description,
+      lineItemData.quantity || 1.0,
+      lineItemData.rate,
+      lineItemData.amount,
+      lineItemData.service_date || null
+    ]);
 
     // Return the created line item
     const createdItem = await db.execute({

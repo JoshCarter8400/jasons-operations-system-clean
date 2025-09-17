@@ -837,15 +837,17 @@ export const DataProvider = ({ children }) => {
         description: enhancedServiceData.description,
         quantity: enhancedServiceData.quantity,
         rate: enhancedServiceData.rate,
-        amount: serviceAmount
+        amount: serviceAmount,
+        service_date: enhancedServiceData.service_date
       });
-      
+
       // Add service to the invoice
       await addServiceToInvoice(invoice.id, {
         description: enhancedServiceData.description,
         quantity: enhancedServiceData.quantity,
         rate: enhancedServiceData.rate,
-        amount: serviceAmount // Store amount without tax
+        amount: serviceAmount, // Store amount without tax
+        service_date: enhancedServiceData.service_date
       });
 
       console.log(`✅ Service added to invoice ${invoice.id}, refreshing cache...`);
@@ -884,7 +886,8 @@ export const DataProvider = ({ children }) => {
         description: updatedData.description,
         quantity: updatedData.quantity,
         rate: updatedData.rate,
-        amount: serviceAmount
+        amount: serviceAmount,
+        service_date: updatedData.service_date
       });
 
       // Update invoice totals
@@ -1307,6 +1310,8 @@ export const DataProvider = ({ children }) => {
    */
   const markServiceComplete = async (clientId, serviceDetails) => {
     try {
+      console.log('🔍 DEBUG: markServiceComplete received serviceDetails:', serviceDetails);
+
       const client = clients.find(c => c.id === clientId);
       if (!client) {
         throw new Error('Client not found');
@@ -1317,8 +1322,10 @@ export const DataProvider = ({ children }) => {
         description: serviceDetails.description || client.serviceType || 'Service',
         quantity: serviceDetails.quantity || 1,
         rate: serviceDetails.rate || parseFloat(client.price?.replace(/[^0-9.]/g, '') || '0'),
-        completedDate: new Date().toISOString().split('T')[0]
+        service_date: serviceDetails.service_date || new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
       };
+
+      console.log('🔍 DEBUG: Created serviceData:', serviceData);
 
       // Add to collecting invoice
       const updatedInvoice = await addServiceToCollectingInvoice(clientId, serviceData);

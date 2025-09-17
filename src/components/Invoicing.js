@@ -5,7 +5,12 @@ import CollectingInvoiceEditor from './CollectingInvoiceEditor';
 import { InvoiceStatusBadge } from './InvoiceStatusBadge';
 import { shouldUsePropertyGrouping } from '../utils/propertyGrouping';
 import { isMultiPropertyInvoice, groupServicesByProperty } from '../utils/multiPropertyHelpers';
+import { formatDateEastern } from '../utils/dateUtils';
 
+// Helper function to format service date in Eastern Time
+const formatServiceDate = (serviceDate) => {
+  return formatDateEastern(serviceDate);
+};
 
 function InvoiceList() {
   const {
@@ -1426,6 +1431,7 @@ function InvoiceDetail() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="text-left p-4 font-medium">Description</th>
+                    <th className="text-left p-4 font-medium">Service Date</th>
                     <th className="text-right p-4 font-medium">Qty</th>
                     <th className="text-right p-4 font-medium">Rate</th>
                     <th className="text-right p-4 font-medium">Amount</th>
@@ -1435,6 +1441,7 @@ function InvoiceDetail() {
                   {invoice.services.map((service, index) => (
                     <tr key={index} className="border-t border-gray-200">
                       <td className="p-4">{service.description}</td>
+                      <td className="p-4">{formatServiceDate(service.service_date)}</td>
                       <td className="p-4 text-right">{service.quantity}</td>
                       <td className="p-4 text-right">${service.rate.toFixed(2)}</td>
                       <td className="p-4 text-right">${service.amount.toFixed(2)}</td>

@@ -1,5 +1,6 @@
 import emailjs from '@emailjs/browser';
 
+
 // EmailJS Configuration
 const EMAILJS_SERVICE_ID = process.env.REACT_APP_EMAILJS_SERVICE_ID;
 const EMAILJS_TEMPLATE_ID_INVOICE = process.env.REACT_APP_EMAILJS_TEMPLATE_ID_INVOICE;
@@ -28,6 +29,24 @@ const initEmailJS = () => {
   } else {
     console.warn('EmailJS public key not configured');
   }
+};
+
+// Date formatting functions for emails - Eastern Time aware
+const formatDateForEmail = (date) => {
+  if (!date) return 'Date not recorded';
+
+  try {
+    // Handle both string dates (YYYY-MM-DD) and Date objects
+    const dateObj = typeof date === 'string' ? new Date(date + 'T00:00:00') : date;
+    return dateObj.toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+  } catch (error) {
+    console.error('Error formatting date for email:', error);
+    return 'Date not recorded';
+  }
+};
+
+const formatServiceDate = (date) => {
+  return formatDateForEmail(date);
 };
 
 // Helper function to check if notes contain meaningful content
@@ -77,25 +96,7 @@ const cleanServiceDescription = (description) => {
   return description.replace(/\s*\([^)]+\)\s*$/, '').trim();
 };
 
-// Helper function to format date from YYYY-MM-DD to MM/DD/YYYY
-const formatDateForEmail = (dateString) => {
-  if (!dateString || dateString === 'Not available') {
-    return 'Not available';
-  }
-  
-  // If it's already in MM/DD/YYYY format, return as is
-  if (dateString.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
-    return dateString;
-  }
-  
-  // Convert YYYY-MM-DD to MM/DD/YYYY
-  if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-    const [year, month, day] = dateString.split('-');
-    return `${month}/${day}/${year}`;
-  }
-  
-  return dateString;
-};
+
 
 // Helper function to group services by property
 const groupServicesByProperty = (lineItems) => {
@@ -155,6 +156,7 @@ const createInvoiceEmailHTML = (invoice, client, businessInfo) => {
       const propertyServicesHTML = propertyServices.map(item => `
         <tr>
           <td style="padding: 8px 16px; border-bottom: 1px solid #f3f4f6;">${item.description}</td>
+          <td style="padding: 8px 16px; border-bottom: 1px solid #f3f4f6; text-align: center;">${formatServiceDate(item.service_date)}</td>
           <td style="padding: 8px 16px; border-bottom: 1px solid #f3f4f6; text-align: center;">${item.quantity || 1}</td>
           <td style="padding: 8px 16px; border-bottom: 1px solid #f3f4f6; text-align: right;">$${(item.rate || item.amount || 0).toFixed(2)}</td>
           <td style="padding: 8px 16px; border-bottom: 1px solid #f3f4f6; text-align: right;">$${((item.quantity || 1) * (item.rate || item.amount || 0)).toFixed(2)}</td>
@@ -163,13 +165,13 @@ const createInvoiceEmailHTML = (invoice, client, businessInfo) => {
       
       return `
         <tr>
-          <td colspan="4" style="padding: 16px 8px 8px 8px; background-color: #f8fafc; border-bottom: 2px solid ${BUSINESS_INFO.brandColor}; font-weight: bold; font-size: 16px; color: #1f2937;">
+          <td colspan="5" style="padding: 16px 8px 8px 8px; background-color: #f8fafc; border-bottom: 2px solid ${BUSINESS_INFO.brandColor}; font-weight: bold; font-size: 16px; color: #1f2937;">
             === ${propertyName} ===
           </td>
         </tr>
         ${propertyServicesHTML}
         <tr>
-          <td colspan="3" style="padding: 12px 8px; background-color: #f9fafb; text-align: right; font-weight: 600; color: #1f2937; border-bottom: 2px solid #e5e7eb;">
+          <td colspan="4" style="padding: 12px 8px; background-color: #f9fafb; text-align: right; font-weight: 600; color: #1f2937; border-bottom: 2px solid #e5e7eb;">
             Property Subtotal:
           </td>
           <td style="padding: 12px 8px; background-color: #f9fafb; text-align: right; font-weight: bold; color: ${BUSINESS_INFO.brandColor}; border-bottom: 2px solid #e5e7eb;">
@@ -184,6 +186,7 @@ const createInvoiceEmailHTML = (invoice, client, businessInfo) => {
     servicesHTML = services.map(item => `
       <tr>
         <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb;">${item.description}</td>
+        <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${formatServiceDate(item.service_date)}</td>
         <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.quantity || 1}</td>
         <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;">$${(item.rate || item.amount || 0).toFixed(2)}</td>
         <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;">$${((item.quantity || 1) * (item.rate || item.amount || 0)).toFixed(2)}</td>
@@ -263,6 +266,9 @@ const createInvoiceEmailHTML = (invoice, client, businessInfo) => {
             <th style="padding: 12px 8px; text-align: left; font-weight: 600; color: #1f2937; border-bottom: 2px solid ${
               BUSINESS_INFO.brandColor
             };">Description</th>
+            <th style="padding: 12px 8px; text-align: center; font-weight: 600; color: #1f2937; border-bottom: 2px solid ${
+              BUSINESS_INFO.brandColor
+            };">Service Date</th>
             <th style="padding: 12px 8px; text-align: center; font-weight: 600; color: #1f2937; border-bottom: 2px solid ${
               BUSINESS_INFO.brandColor
             };">Qty</th>
@@ -363,19 +369,20 @@ const createReceiptEmailHTML = (invoice, client, businessInfo, paymentMethod) =>
       const propertyServicesHTML = propertyServices.map(item => `
         <tr>
           <td style="padding: 8px 16px; border-bottom: 1px solid #f3f4f6;">${item.description}</td>
+          <td style="padding: 8px 16px; border-bottom: 1px solid #f3f4f6; text-align: center;">${formatServiceDate(item.service_date)}</td>
           <td style="padding: 8px 16px; border-bottom: 1px solid #f3f4f6; text-align: right;">$${((item.quantity || 1) * (item.rate || item.amount || 0)).toFixed(2)}</td>
         </tr>
       `).join('');
       
       return `
         <tr>
-          <td colspan="2" style="padding: 16px 8px 8px 8px; background-color: #f8fafc; border-bottom: 2px solid ${BUSINESS_INFO.brandColor}; font-weight: bold; font-size: 16px; color: #1f2937;">
+          <td colspan="3" style="padding: 16px 8px 8px 8px; background-color: #f8fafc; border-bottom: 2px solid ${BUSINESS_INFO.brandColor}; font-weight: bold; font-size: 16px; color: #1f2937;">
             === ${propertyName} ===
           </td>
         </tr>
         ${propertyServicesHTML}
         <tr>
-          <td style="padding: 12px 8px; background-color: #f9fafb; text-align: right; font-weight: 600; color: #1f2937; border-bottom: 2px solid #e5e7eb;">
+          <td colspan="2" style="padding: 12px 8px; background-color: #f9fafb; text-align: right; font-weight: 600; color: #1f2937; border-bottom: 2px solid #e5e7eb;">
             Property Subtotal:
           </td>
           <td style="padding: 12px 8px; background-color: #f9fafb; text-align: right; font-weight: bold; color: ${BUSINESS_INFO.brandColor}; border-bottom: 2px solid #e5e7eb;">
@@ -390,6 +397,7 @@ const createReceiptEmailHTML = (invoice, client, businessInfo, paymentMethod) =>
     servicesHTML = services.map(item => `
       <tr>
         <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb;">${item.description}</td>
+        <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${formatServiceDate(item.service_date)}</td>
         <td style="padding: 12px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;">$${((item.quantity || 1) * (item.rate || item.amount || 0)).toFixed(2)}</td>
       </tr>
     `).join('');
@@ -453,6 +461,7 @@ const createReceiptEmailHTML = (invoice, client, businessInfo, paymentMethod) =>
         <thead>
           <tr style="background-color: #f3f4f6;">
             <th style="padding: 12px 8px; text-align: left; font-weight: 600; color: #1f2937; border-bottom: 2px solid ${BUSINESS_INFO.brandColor};">Description</th>
+            <th style="padding: 12px 8px; text-align: center; font-weight: 600; color: #1f2937; border-bottom: 2px solid ${BUSINESS_INFO.brandColor};">Service Date</th>
             <th style="padding: 12px 8px; text-align: right; font-weight: 600; color: #1f2937; border-bottom: 2px solid ${BUSINESS_INFO.brandColor};">Amount</th>
           </tr>
         </thead>
@@ -515,8 +524,8 @@ const sendInvoiceEmail = async (invoice, client, businessInfo) => {
       from_email: BUSINESS_INFO.email,
       subject: `Invoice #${invoice.id} from ${BUSINESS_INFO.name}`,
       invoice_number: invoice.id,
-      invoice_date: new Date(invoice.date || Date.now()).toLocaleDateString(),
-      due_date: new Date(invoice.due_date || invoice.dueDate || Date.now()).toLocaleDateString(),
+      invoice_date: formatDateForEmail(invoice.date || new Date()),
+      due_date: formatDateForEmail(invoice.due_date || invoice.dueDate || new Date()),
       total_amount: (invoice.total || 0).toFixed(2),
       client_name: client.name,
       business_name: BUSINESS_INFO.name,
@@ -1137,7 +1146,7 @@ const sendPaymentReceiptSMS = async (invoice, client, businessInfo, paymentMetho
 };
 
 // SMS notification placeholder for backward compatibility
-const sendSMSNotification = async (type, phoneNumber, message) => {
+const sendSMSNotification = async (_type, phoneNumber, _message) => {
   // For backward compatibility, log the SMS that would be sent
   createEmailNotification(
     'info',
@@ -1145,7 +1154,7 @@ const sendSMSNotification = async (type, phoneNumber, message) => {
     `SMS notification prepared for ${phoneNumber} (Use sendInvoiceSMS or sendPaymentReceiptSMS for full functionality)`,
     true
   );
-  
+
   return {
     success: false,
     error: 'Use sendInvoiceSMS or sendPaymentReceiptSMS instead'

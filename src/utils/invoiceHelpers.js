@@ -60,17 +60,19 @@ export async function createCollectingInvoice(clientId, clientData) {
 /**
  * Adds a completed service to an invoice as a line item
  * @param {number} invoiceId - Invoice ID
- * @param {Object} serviceData - Service data { description, quantity, rate, amount }
+ * @param {Object} serviceData - Service data { description, quantity, rate, amount, service_date }
  * @returns {Promise<boolean>} Success status
  */
 export async function addServiceToInvoice(invoiceId, serviceData) {
   try {
+    console.log('🔍 DEBUG: addServiceToInvoice received serviceData:', serviceData);
+
     // Add line item
     await insertInvoiceLineItem(invoiceId, serviceData);
-    
+
     // Recalculate invoice totals
     await updateInvoiceTotals(invoiceId);
-    
+
     return true;
   } catch (error) {
     console.error('Error adding service to invoice:', error);
