@@ -31,7 +31,6 @@ function DailySchedule() {
     client: null,
     date: selectedDate,
     time: '09:00',
-    duration: '1.5',
     serviceType: '',
     area: '',
     notes: '',
@@ -136,13 +135,6 @@ function DailySchedule() {
   const allVisibleAppointments = [...scheduledAppointments, ...completedAppointments];
   const appointmentsByArea = groupAppointmentsByArea(scheduledAppointments);
 
-  // Calculate estimated work time for scheduled appointments
-  const totalEstimatedTime = scheduledAppointments.reduce(
-    (sum, appointment) => {
-      return sum + (appointment.duration_hours || 1.5);
-    },
-    0
-  );
 
   const formatDate = (dateString) => {
     // Create date at noon to avoid timezone shifts
@@ -202,11 +194,17 @@ function DailySchedule() {
       } else {
         // New appointment - use database function
 
+
+        // Ensure clientId is a valid number
+        const clientId = parseInt(scheduleForm.client.id);
+        if (!clientId || isNaN(clientId)) {
+          throw new Error('Invalid client ID');
+        }
+
         const formData = {
-          clientId: scheduleForm.client.id,
+          clientId: clientId,
           date: scheduleForm.date,
           time: scheduleForm.time,
-          duration: scheduleForm.duration,
           serviceType:
             scheduleForm.serviceType ||
             scheduleForm.client.serviceType ||
@@ -215,6 +213,7 @@ function DailySchedule() {
           recurring: scheduleForm.recurring,
           recurringDay: scheduleForm.recurringDay,
         };
+
 
 
         const result = await createAppointmentsFromForm(formData);
@@ -253,7 +252,6 @@ function DailySchedule() {
         client: null,
         date: selectedDate, // Use current selected date instead of scheduled date
         time: '09:00',
-        duration: '1.5',
         serviceType: '',
         area: '',
         notes: '',
@@ -285,7 +283,6 @@ function DailySchedule() {
       },
       date: appointment.appointment_date,
       time: appointment.appointment_time,
-      duration: appointment.duration_hours?.toString() || '1.5',
       serviceType: appointment.service_type,
       area: appointment.client.area,
       notes: appointment.notes || '',
@@ -398,7 +395,6 @@ function DailySchedule() {
         client: client,
         serviceType: client.serviceType,
         area: client.area,
-        duration: '1.5',
       });
     }
   };
@@ -416,7 +412,20 @@ function DailySchedule() {
             </div>
             <div className="flex gap-2 flex-wrap">
               <button
-                onClick={() => setShowScheduleForm(true)}
+                onClick={() => {
+                  setScheduleForm({
+                    appointmentId: null,
+                    client: null,
+                    date: selectedDate, // Use current selected date
+                    time: '09:00',
+                    serviceType: '',
+                    area: '',
+                    notes: '',
+                    recurring: 'One-time',
+                    recurringDay: 'Monday',
+                  });
+                  setShowScheduleForm(true);
+                }}
                 className="btn btn-primary btn-sm"
               >
                 + Schedule Service
@@ -620,26 +629,6 @@ function DailySchedule() {
                     )}
                   </div>
 
-                  <div className="mb-4">
-                    <label className="block text-sm font-medium mb-2">
-                      Estimated Duration (hours)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.25"
-                      min="0.25"
-                      max="8"
-                      value={scheduleForm.duration}
-                      onChange={(e) =>
-                        setScheduleForm({
-                          ...scheduleForm,
-                          duration: e.target.value,
-                        })
-                      }
-                      className="w-full p-3 border border-gray-300 rounded-md"
-                      placeholder="1.5"
-                    />
-                  </div>
 
                   <div className="mb-6">
                     <label className="block text-sm font-medium mb-2">
@@ -773,9 +762,6 @@ function DailySchedule() {
               <p className="text-sm text-gray-600">
                 {scheduledAppointments.length} scheduled • {completedAppointments.length} completed
               </p>
-              <p className="text-sm text-gray-600">
-                Est. {totalEstimatedTime.toFixed(1)} hours remaining
-              </p>
             </div>
           </div>
 
@@ -790,7 +776,20 @@ function DailySchedule() {
                 <div className="text-center py-8 text-gray-500">
                   <p className="mb-4">No services scheduled for this date</p>
                   <button
-                    onClick={() => setShowScheduleForm(true)}
+                    onClick={() => {
+                      setScheduleForm({
+                        appointmentId: null,
+                        client: null,
+                        date: selectedDate, // Use current selected date
+                        time: '09:00',
+                        serviceType: '',
+                        area: '',
+                        notes: '',
+                        recurring: 'One-time',
+                        recurringDay: 'Monday',
+                      });
+                      setShowScheduleForm(true);
+                    }}
                     className="btn btn-primary"
                   >
                     Schedule a Service
@@ -826,10 +825,6 @@ function DailySchedule() {
                               <span>
                                 <strong>Phone:</strong>{' '}
                                 {appointment.client.phone}
-                              </span>
-                              <span>
-                                <strong>Duration:</strong>{' '}
-                                {appointment.duration_hours}h
                               </span>
                             </div>
                             {appointment.notes && (
@@ -903,10 +898,6 @@ function DailySchedule() {
                                   <span>
                                     <strong>Phone:</strong>{' '}
                                     {appointment.client.phone}
-                                  </span>
-                                  <span>
-                                    <strong>Duration:</strong>{' '}
-                                    {appointment.duration_hours}h
                                   </span>
                                 </div>
                                 {appointment.notes && (
@@ -985,7 +976,6 @@ function DailySchedule() {
                                 </div>
                                 <div className="text-right">
                                   <p className="text-sm text-gray-600">{appointment.client.phone}</p>
-                                  <p className="text-sm text-gray-600">{appointment.duration_hours}h</p>
                                 </div>
                               </div>
                             ))}

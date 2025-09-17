@@ -446,10 +446,23 @@ export async function getAppointmentsByDate(date) {
  * @param {string} appointmentData.status - Status (defaults to 'scheduled')
  */
 export async function createAppointment(appointmentData) {
-  
+  console.log('🔍 DEBUG: createAppointment received data:', {
+    client_id: appointmentData.client_id,
+    client_id_type: typeof appointmentData.client_id,
+    appointmentData: appointmentData
+  });
+
   try {
     if (!config.url) {
       throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    // Validate foreign key
+    if (!appointmentData.client_id) {
+      throw new Error('client_id is required for foreign key constraint');
+    }
+    if (typeof appointmentData.client_id !== 'number' || isNaN(appointmentData.client_id)) {
+      throw new Error(`client_id must be a valid number, received: ${appointmentData.client_id} (${typeof appointmentData.client_id})`);
     }
 
     const db = createLibSQLClient(config);
@@ -558,10 +571,23 @@ export async function rescheduleAppointment(appointmentId, newDate, newTime) {
  * @param {string} formData.recurringDay - Day of week for recurring (Monday, Tuesday, etc.)
  */
 export async function createAppointmentsFromForm(formData) {
-  
+  console.log('🔍 DEBUG: createAppointmentsFromForm received data:', {
+    clientId: formData.clientId,
+    clientIdType: typeof formData.clientId,
+    formData: formData
+  });
+
   try {
     if (!config.url) {
       throw new Error('REACT_APP_TURSO_DATABASE_URL environment variable is required');
+    }
+
+    // Validate required fields
+    if (!formData.clientId) {
+      throw new Error('Client ID is required');
+    }
+    if (typeof formData.clientId !== 'number' || isNaN(formData.clientId)) {
+      throw new Error(`Client ID must be a valid number, received: ${formData.clientId} (${typeof formData.clientId})`);
     }
 
     if (formData.recurring === 'One-time') {
