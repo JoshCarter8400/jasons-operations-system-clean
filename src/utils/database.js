@@ -55,7 +55,10 @@ export const initializeDatabase = async () => {
       await db.execute('PRAGMA foreign_keys = ON');
       
       // Initialize schema with foreign key constraints
-      await initializeSchema();
+      // await initializeSchema(); // Schema should be initialized via migration files or external setup
+
+      // Run migrations
+      await runMigrations();
       
       if (DEBUG) {
         console.log('✅ Database connection and schema initialized');
@@ -828,24 +831,22 @@ export const searchEquipment = async (searchTerm) => {
  */
 export const createEquipment = async (equipmentData) => {
   const {
-    equipmentType, brand, model, year, serialNumber, currentHours = 0,
-    condition = 'Good', status = 'Active', lastServiceDate, lastServiceHours,
-    nextServiceDueHours, specifications, purchaseDate, purchasePrice,
-    warrantyExpires, currentLocation = 'Shop', notes = ''
+    equipmentType, brand, model, year, condition = 'Good', status = 'Active',
+    lastServiceDate, lastServiceHours, nextServiceDueDate, specifications,
+    purchaseDate, purchasePrice, warrantyExpires, currentLocation = 'Shop', notes = ''
   } = equipmentData;
-  
+
   const result = await execute(`
     INSERT INTO equipment (
-      equipment_type, brand, model, year, serial_number, current_hours,
-      condition, status, last_service_date, last_service_hours,
-      next_service_due_hours, specifications, purchase_date, purchase_price,
-      warranty_expires, current_location, notes
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      equipment_type, brand, model, year, condition, status,
+      last_service_date, last_service_hours, next_service_due_date, specifications,
+      purchase_date, purchase_price, warranty_expires, current_location, notes
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
-    equipmentType, brand, model, year, serialNumber || null, currentHours,
-    condition, status, lastServiceDate || null, lastServiceHours || null,
-    nextServiceDueHours || null, specifications ? JSON.stringify(specifications) : null,
-    purchaseDate || null, purchasePrice || null, warrantyExpires || null, currentLocation, notes
+    equipmentType, brand, model, year, condition, status,
+    lastServiceDate || null, lastServiceHours || null, nextServiceDueDate || null,
+    specifications ? JSON.stringify(specifications) : null, purchaseDate || null,
+    purchasePrice || null, warrantyExpires || null, currentLocation, notes
   ]);
   
   return await getEquipmentById(result.lastInsertRowid);
@@ -859,25 +860,23 @@ export const createEquipment = async (equipmentData) => {
  */
 export const updateEquipment = async (id, equipmentData) => {
   const {
-    equipmentType, brand, model, year, serialNumber, currentHours,
-    condition, status, lastServiceDate, lastServiceHours,
-    nextServiceDueHours, specifications, purchaseDate, purchasePrice,
-    warrantyExpires, currentLocation, notes
+    equipmentType, brand, model, year, condition, status,
+    lastServiceDate, lastServiceHours, nextServiceDueDate, specifications,
+    purchaseDate, purchasePrice, warrantyExpires, currentLocation, notes
   } = equipmentData;
-  
+
   await execute(`
     UPDATE equipment SET
-      equipment_type = ?, brand = ?, model = ?, year = ?, serial_number = ?,
-      current_hours = ?, condition = ?, status = ?, last_service_date = ?,
-      last_service_hours = ?, next_service_due_hours = ?, specifications = ?,
-      purchase_date = ?, purchase_price = ?, warranty_expires = ?,
-      current_location = ?, notes = ?
+      equipment_type = ?, brand = ?, model = ?, year = ?, condition = ?,
+      status = ?, last_service_date = ?, last_service_hours = ?,
+      next_service_due_date = ?, specifications = ?, purchase_date = ?,
+      purchase_price = ?, warranty_expires = ?, current_location = ?, notes = ?
     WHERE id = ?
   `, [
-    equipmentType, brand, model, year, serialNumber || null, currentHours,
-    condition, status, lastServiceDate || null, lastServiceHours || null,
-    nextServiceDueHours || null, specifications ? JSON.stringify(specifications) : null,
-    purchaseDate || null, purchasePrice || null, warrantyExpires || null, currentLocation, notes, id
+    equipmentType, brand, model, year, condition, status,
+    lastServiceDate || null, lastServiceHours || null, nextServiceDueDate || null,
+    specifications ? JSON.stringify(specifications) : null, purchaseDate || null,
+    purchasePrice || null, warrantyExpires || null, currentLocation, notes, id
   ]);
   
   return await getEquipmentById(id);
@@ -1127,11 +1126,9 @@ const parseEquipmentRow = (row) => {
     ...row,
     specifications: row.specifications ? JSON.parse(row.specifications) : {},
     equipmentType: row.equipment_type,
-    serialNumber: row.serial_number,
-    currentHours: row.current_hours,
     lastServiceDate: row.last_service_date,
     lastServiceHours: row.last_service_hours,
-    nextServiceDueHours: row.next_service_due_hours,
+    nextServiceDueDate: row.next_service_due_date,
     purchaseDate: row.purchase_date,
     purchasePrice: row.purchase_price,
     warrantyExpires: row.warranty_expires,
@@ -1191,6 +1188,38 @@ export const testConnection = async () => {
   } catch (error) {
     console.error('Database connection test failed:', error);
     return false;
+  }
+};
+
+/**
+ * Run database migrations to keep schema up to date
+ * @returns {Promise<void>}
+ */
+const runMigrations = async () => {
+  try {
+    // Migration: Add next_service_due_date column to equipment table
+    try {
+      await execute('ALTER TABLE equipment ADD COLUMN next_service_due_date DATE');
+      if (DEBUG) {
+        console.log('✅ Migration: Added next_service_due_date column to equipment table');
+      }
+    } catch (error) {
+      if (error.message.includes('duplicate column name') || error.message.includes('already exists')) {
+        // Column already exists, migration not needed
+        if (DEBUG) {
+          console.log('⚠️ Migration: next_service_due_date column already exists');
+        }
+      } else {
+        console.error('❌ Migration failed for next_service_due_date column:', error);
+        throw error;
+      }
+    }
+
+    // Add more migrations here as needed
+
+  } catch (error) {
+    console.error('❌ Database migrations failed:', error);
+    throw error;
   }
 };
 

@@ -206,6 +206,7 @@ CREATE TABLE equipment (
     last_service_date DATE,
     last_service_hours REAL,
     next_service_due_hours REAL,
+    next_service_due_date DATE,
     
     -- Equipment-specific fields (JSON for flexibility)
     specifications TEXT, -- JSON: {barSize: "20\"", chainType: "3/8", psi: 3000, licensePlate: "ABC123"}

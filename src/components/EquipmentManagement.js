@@ -87,6 +87,52 @@ function EquipmentList() {
     }
   };
 
+  const calculateDaysUntilService = (nextServiceDate) => {
+    if (!nextServiceDate) return null;
+    const today = new Date();
+    const serviceDate = new Date(nextServiceDate);
+    const diffTime = serviceDate - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
+
+  const getServiceAlertInfo = (nextServiceDate) => {
+    const daysUntil = calculateDaysUntilService(nextServiceDate);
+    if (daysUntil === null) return null;
+
+    if (daysUntil < 0) {
+      // Overdue
+      return {
+        status: 'overdue',
+        icon: '🔴',
+        message: `Service overdue by ${Math.abs(daysUntil)} day${Math.abs(daysUntil) !== 1 ? 's' : ''}`,
+        bgColor: 'bg-red-50',
+        borderColor: 'border-red-200',
+        textColor: 'text-red-700'
+      };
+    } else if (daysUntil <= 14) {
+      // Due within 2 weeks
+      return {
+        status: 'due-soon',
+        icon: '🟡',
+        message: `Service due in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}`,
+        bgColor: 'bg-yellow-50',
+        borderColor: 'border-yellow-200',
+        textColor: 'text-yellow-700'
+      };
+    } else {
+      // Not due soon
+      return {
+        status: 'not-due',
+        icon: '🟢',
+        message: `Next service in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}`,
+        bgColor: 'bg-green-50',
+        borderColor: 'border-green-200',
+        textColor: 'text-green-700'
+      };
+    }
+  };
+
   if (error) {
     return (
       <div className="card">
@@ -159,20 +205,36 @@ function EquipmentList() {
                           {item.currentHours > 0 && (
                             <span><strong>Hours:</strong> {item.currentHours}</span>
                           )}
-                          {item.lastServiceDate && (
-                            <span><strong>Last Service:</strong> {formatDate(item.lastServiceDate)}</span>
-                          )}
                           {item.currentLocation && (
                             <span><strong>Location:</strong> {item.currentLocation}</span>
                           )}
                         </div>
-                        {item.nextServiceDueHours && item.currentHours >= item.nextServiceDueHours && (
-                          <div className="bg-red-50 border border-red-200 rounded-md p-2 mt-2">
-                            <p className="text-red-700 text-sm font-medium">
-                              🚨 Service Due - {item.currentHours - item.nextServiceDueHours} hours overdue
-                            </p>
-                          </div>
-                        )}
+                        <div className="text-sm mb-2">
+                          {item.lastServiceDate ? (
+                            <span className="text-green-600">
+                              🔧 <strong>Last Service:</strong> {formatDate(item.lastServiceDate)}
+                            </span>
+                          ) : (
+                            <span className="text-gray-500">
+                              🔧 <strong>Last Service:</strong> No service recorded
+                            </span>
+                          )}
+                        </div>
+                        {(() => {
+                          const serviceAlert = getServiceAlertInfo(item.nextServiceDueDate);
+                          if (!serviceAlert) return null;
+
+                          return (
+                            <div className={`${serviceAlert.bgColor} border ${serviceAlert.borderColor} rounded-md p-2 mt-2`}>
+                              <p className={`${serviceAlert.textColor} text-sm font-medium`}>
+                                {serviceAlert.icon} {serviceAlert.message}
+                              </p>
+                              <p className="text-xs text-gray-600 mt-1">
+                                Next Service: {formatDate(item.nextServiceDueDate)}
+                              </p>
+                            </div>
+                          );
+                        })()}
                       </div>
                       <div className="flex flex-col gap-2">
                         <span className={`px-2 py-1 rounded-full text-xs ${getConditionColor(item.condition)}`}>
@@ -260,13 +322,11 @@ function AddEquipment() {
     brand: '',
     model: '',
     year: '',
-    serialNumber: '',
-    currentHours: '',
     condition: 'Good',
     status: 'Active',
     lastServiceDate: '',
     lastServiceHours: '',
-    nextServiceDueHours: '',
+    nextServiceDueDate: '',
     purchaseDate: '',
     purchasePrice: '',
     warrantyExpires: '',
@@ -312,13 +372,11 @@ function AddEquipment() {
         brand: formData.brand,
         model: formData.model,
         year: formData.year ? parseInt(formData.year) : null,
-        serialNumber: formData.serialNumber,
-        currentHours: parseFloat(formData.currentHours) || 0,
         condition: formData.condition,
         status: formData.status,
         lastServiceDate: formData.lastServiceDate || null,
         lastServiceHours: formData.lastServiceHours ? parseFloat(formData.lastServiceHours) : null,
-        nextServiceDueHours: formData.nextServiceDueHours ? parseFloat(formData.nextServiceDueHours) : null,
+        nextServiceDueDate: formData.nextServiceDueDate || null,
         specifications: Object.keys(specifications).length > 0 ? specifications : null,
         purchaseDate: formData.purchaseDate || null,
         purchasePrice: formData.purchasePrice ? parseFloat(formData.purchasePrice) : null,
@@ -484,32 +542,9 @@ function AddEquipment() {
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-2">Serial Number</label>
-              <input
-                type="text"
-                name="serialNumber"
-                value={formData.serialNumber}
-                onChange={handleChange}
-                className="w-full p-3 border border-gray-300 rounded-md"
-              />
-            </div>
-
             {renderSpecificFields()}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div>
-                <label className="block text-sm font-medium mb-2">Current Hours</label>
-                <input
-                  type="number"
-                  name="currentHours"
-                  value={formData.currentHours}
-                  onChange={handleChange}
-                  step="0.1"
-                  min="0"
-                  className="w-full p-3 border border-gray-300 rounded-md"
-                />
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium mb-2">Condition</label>
                 <select
@@ -572,6 +607,17 @@ function AddEquipment() {
                 value={formData.currentLocation}
                 onChange={handleChange}
                 placeholder="e.g., Shop, Truck, Job Site"
+                className="w-full p-3 border border-gray-300 rounded-md"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Next Service Due Date</label>
+              <input
+                type="date"
+                name="nextServiceDueDate"
+                value={formData.nextServiceDueDate}
+                onChange={handleChange}
                 className="w-full p-3 border border-gray-300 rounded-md"
               />
             </div>
@@ -640,6 +686,15 @@ function EquipmentDetail() {
     loadEquipment();
   }, [loadEquipment]);
 
+  const calculateDaysUntilService = (nextServiceDate) => {
+    if (!nextServiceDate) return null;
+    const today = new Date();
+    const serviceDate = new Date(nextServiceDate);
+    const diffTime = serviceDate - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
+
   const handleDelete = async () => {
     try {
       await deleteEquipment(parseInt(id));
@@ -688,12 +743,6 @@ function EquipmentDetail() {
                 className="btn btn-primary"
               >
                 Edit Equipment
-              </button>
-              <button
-                onClick={() => navigate(`/equipment/${equipment.id}/service`)}
-                className="btn btn-secondary"
-              >
-                Add Service
               </button>
               <button
                 onClick={() => setShowDeleteConfirm(true)}
@@ -792,13 +841,21 @@ function EquipmentDetail() {
                       <p className="text-gray-900">{formatDate(equipment.lastServiceDate)}</p>
                     </div>
                   )}
-                  {equipment.nextServiceDueHours && (
+                  {equipment.nextServiceDueDate && (
                     <div>
                       <label className="text-sm font-medium text-gray-600">Next Service Due</label>
-                      <p className="text-gray-900">{equipment.nextServiceDueHours} hours</p>
-                      {equipment.currentHours >= equipment.nextServiceDueHours && (
-                        <p className="text-red-600 text-sm mt-1">⚠️ Service overdue</p>
-                      )}
+                      <p className="text-gray-900">{formatDate(equipment.nextServiceDueDate)}</p>
+                      {(() => {
+                        const daysUntil = calculateDaysUntilService(equipment.nextServiceDueDate);
+                        if (daysUntil === null) return null;
+                        if (daysUntil < 0) {
+                          return <p className="text-red-600 text-sm mt-1">⚠️ Service overdue by {Math.abs(daysUntil)} days</p>;
+                        } else if (daysUntil <= 14) {
+                          return <p className="text-yellow-600 text-sm mt-1">⏰ Due in {daysUntil} days</p>;
+                        } else {
+                          return <p className="text-green-600 text-sm mt-1">✅ Due in {daysUntil} days</p>;
+                        }
+                      })()}
                     </div>
                   )}
                 </div>
@@ -933,13 +990,11 @@ function EditEquipment() {
         brand: equipmentData.brand || '',
         model: equipmentData.model || '',
         year: equipmentData.year ? equipmentData.year.toString() : '',
-        serialNumber: equipmentData.serialNumber || '',
-        currentHours: equipmentData.currentHours ? equipmentData.currentHours.toString() : '',
         condition: equipmentData.condition || 'Good',
         status: equipmentData.status || 'Active',
         lastServiceDate: equipmentData.lastServiceDate || '',
         lastServiceHours: equipmentData.lastServiceHours ? equipmentData.lastServiceHours.toString() : '',
-        nextServiceDueHours: equipmentData.nextServiceDueHours ? equipmentData.nextServiceDueHours.toString() : '',
+        nextServiceDueDate: equipmentData.nextServiceDueDate || '',
         purchaseDate: equipmentData.purchaseDate || '',
         purchasePrice: equipmentData.purchasePrice ? equipmentData.purchasePrice.toString() : '',
         warrantyExpires: equipmentData.warrantyExpires || '',
@@ -979,13 +1034,11 @@ function EditEquipment() {
         brand: formData.brand,
         model: formData.model,
         year: formData.year ? parseInt(formData.year) : null,
-        serialNumber: formData.serialNumber,
-        currentHours: parseFloat(formData.currentHours) || 0,
         condition: formData.condition,
         status: formData.status,
         lastServiceDate: formData.lastServiceDate || null,
         lastServiceHours: formData.lastServiceHours ? parseFloat(formData.lastServiceHours) : null,
-        nextServiceDueHours: formData.nextServiceDueHours ? parseFloat(formData.nextServiceDueHours) : null,
+        nextServiceDueDate: formData.nextServiceDueDate || null,
         specifications: Object.keys(specifications).length > 0 ? specifications : null,
         purchaseDate: formData.purchaseDate || null,
         purchasePrice: formData.purchasePrice ? parseFloat(formData.purchasePrice) : null,
@@ -994,6 +1047,7 @@ function EditEquipment() {
         notes: formData.notes
       };
 
+      console.log('🔧 EditEquipment - Data being sent to updateEquipment:', equipmentData);
       await updateEquipment(parseInt(id), equipmentData);
       navigate(`/equipment/${id}`);
     } catch (err) {
@@ -1172,32 +1226,9 @@ function EditEquipment() {
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-2">Serial Number</label>
-              <input
-                type="text"
-                name="serialNumber"
-                value={formData.serialNumber}
-                onChange={handleChange}
-                className="w-full p-3 border border-gray-300 rounded-md"
-              />
-            </div>
-
             {renderSpecificFields()}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div>
-                <label className="block text-sm font-medium mb-2">Current Hours</label>
-                <input
-                  type="number"
-                  name="currentHours"
-                  value={formData.currentHours}
-                  onChange={handleChange}
-                  step="0.1"
-                  min="0"
-                  className="w-full p-3 border border-gray-300 rounded-md"
-                />
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium mb-2">Condition</label>
                 <select
@@ -1251,14 +1282,12 @@ function EditEquipment() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Next Service Due (Hours)</label>
+                <label className="block text-sm font-medium mb-2">Next Service Due Date</label>
                 <input
-                  type="number"
-                  name="nextServiceDueHours"
-                  value={formData.nextServiceDueHours}
+                  type="date"
+                  name="nextServiceDueDate"
+                  value={formData.nextServiceDueDate}
                   onChange={handleChange}
-                  step="0.1"
-                  min="0"
                   className="w-full p-3 border border-gray-300 rounded-md"
                 />
               </div>
