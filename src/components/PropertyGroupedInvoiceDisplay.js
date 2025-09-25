@@ -87,8 +87,8 @@ const PropertyGroupedInvoiceDisplay = ({
                         value={editService.rate}
                         onChange={(e) => {
                           const value = e.target.value;
-                          if (value === '' || /^\\d*\\.?\\d*$/.test(value)) {
-                            setEditService({...editService, rate: parseFloat(value) || 0});
+                          if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                            setEditService({...editService, rate: value});
                           }
                         }}
                         onFocus={(e) => e.target.select()}
