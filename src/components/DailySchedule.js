@@ -61,6 +61,25 @@ function DailySchedule() {
     }
   }, [selectedDate, viewMode, loadWeekAppointments]);
 
+  // Handle modal scroll positioning
+  useEffect(() => {
+    let savedScrollPosition = 0;
+
+    if (showScheduleForm || showDeleteModal) {
+      // Save current scroll position
+      savedScrollPosition = window.scrollY;
+
+      // Scroll to top smoothly to show modal
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      // Return cleanup function to restore scroll when modal closes
+      return () => {
+        // Restore scroll position when modal closes
+        window.scrollTo({ top: savedScrollPosition, behavior: 'instant' });
+      };
+    }
+  }, [showScheduleForm, showDeleteModal]);
+
   // Initialize the appointment system
   const initializeSystem = async () => {
     try {
@@ -239,12 +258,18 @@ function DailySchedule() {
         }
       }
 
-      // Navigate to the scheduled date and refresh appointments
+      // For new appointments, navigate to the scheduled date
+      // For rescheduling, stay on the current date to continue workflow
       const scheduledDate = scheduleForm.date;
-      if (scheduledDate !== selectedDate) {
+      const isRescheduling = scheduleForm.appointmentId !== null;
+
+      if (!isRescheduling && scheduledDate !== selectedDate) {
         setSelectedDate(scheduledDate);
+        await loadAppointmentsForDate(scheduledDate);
+      } else {
+        // For rescheduling or same-day scheduling, refresh current date
+        await loadAppointmentsForDate(selectedDate);
       }
-      await loadAppointmentsForDate(scheduledDate);
       setShowScheduleForm(false);
       // Clear form completely for new appointments
       setScheduleForm({
@@ -460,8 +485,25 @@ function DailySchedule() {
         <div className="card-content">
           {/* Schedule Service Form Modal */}
           {showScheduleForm && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 modal-backdrop flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-6 w-full max-w-lg mx-4 shadow-xl">
+            <div
+              className="fixed inset-0 bg-black bg-opacity-50 z-50"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: '100vh',
+                overflow: 'auto',
+                padding: '16px'
+              }}
+            >
+              <div
+                className="bg-white rounded-lg p-6 w-full max-w-lg shadow-xl"
+                style={{
+                  margin: 'auto',
+                  maxHeight: '90vh',
+                  overflowY: 'auto'
+                }}
+              >
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold">
                     {scheduleForm.appointmentId
@@ -665,8 +707,25 @@ function DailySchedule() {
 
           {/* Delete Confirmation Modal */}
           {showDeleteModal && appointmentToDelete && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center" style={{zIndex: 9999}}>
-              <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4" style={{zIndex: 10000}}>
+            <div
+              className="fixed inset-0 bg-black bg-opacity-50 z-50"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: '100vh',
+                overflow: 'auto',
+                padding: '16px'
+              }}
+            >
+              <div
+                className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl"
+                style={{
+                  margin: 'auto',
+                  maxHeight: '90vh',
+                  overflowY: 'auto'
+                }}
+              >
                 <h3 className="text-lg font-semibold mb-4 text-red-600" style={{color: 'red !important'}}>
                   Delete Appointment?
                 </h3>
