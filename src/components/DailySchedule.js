@@ -37,6 +37,7 @@ function DailySchedule() {
     recurring: 'One-time',
     recurringDay: 'Monday',
   });
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Load week appointments
   const loadWeekAppointments = useCallback(async () => {
@@ -422,6 +423,11 @@ function DailySchedule() {
         area: client.area,
       });
     }
+  };
+
+  // Filter appointments based on search query
+  const handleSearch = (query) => {
+    setSearchQuery(query);
   };
 
   return (
@@ -831,6 +837,31 @@ function DailySchedule() {
                 Services for {formatDate(selectedDate)}
               </h3>
 
+              {/* Quick Client Search */}
+              <div className="mb-4 relative">
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => handleSearch(e.target.value)}
+                    placeholder="Search clients on this day..."
+                    className="w-full p-4 text-base border border-gray-300 rounded-lg"
+                    style={{ fontSize: '16px', minHeight: '48px' }}
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => {
+                        setSearchQuery('');
+                      }}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500"
+                      style={{ fontSize: '20px', minHeight: '44px', minWidth: '44px' }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
               {allVisibleAppointments.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <p className="mb-4">No services scheduled for this date</p>
@@ -857,8 +888,18 @@ function DailySchedule() {
               ) : (
                 <div className="grid gap-4">
                   {/* Scheduled Appointments */}
-                  {scheduledAppointments.map((appointment) => (
-                    <div key={appointment.id} className="card card-hover">
+                  {scheduledAppointments
+                    .filter(apt => {
+                      if (!searchQuery.trim()) return true;
+                      const query = searchQuery.toLowerCase();
+                      return (
+                        apt.client.name.toLowerCase().includes(query) ||
+                        apt.client.phone.includes(query) ||
+                        apt.client.address.toLowerCase().includes(query)
+                      );
+                    })
+                    .map((appointment) => (
+                    <div key={appointment.id} id={`appointment-${appointment.id}`} className="card card-hover">
                       <div className="card-content">
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
                           <div className="flex-1 min-w-0">
