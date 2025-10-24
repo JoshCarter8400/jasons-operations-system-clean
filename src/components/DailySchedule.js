@@ -38,6 +38,8 @@ function DailySchedule() {
     recurringDay: 'Monday',
   });
   const [searchQuery, setSearchQuery] = useState('');
+  const [clientSearchQuery, setClientSearchQuery] = useState('');
+  const [showClientResults, setShowClientResults] = useState(false);
 
   // Load week appointments
   const loadWeekAppointments = useCallback(async () => {
@@ -430,6 +432,31 @@ function DailySchedule() {
     setSearchQuery(query);
   };
 
+  // Handle client search in schedule modal
+  const handleClientSearch = (query) => {
+    setClientSearchQuery(query);
+    setShowClientResults(query.trim().length > 0);
+  };
+
+  // Select client from search results
+  const selectClientFromSearch = (client) => {
+    handleClientChange(client);
+    setClientSearchQuery(client.name);
+    setShowClientResults(false);
+  };
+
+  // Clear client selection
+  const clearClientSelection = () => {
+    setScheduleForm({
+      ...scheduleForm,
+      client: null,
+      serviceType: '',
+      area: ''
+    });
+    setClientSearchQuery('');
+    setShowClientResults(false);
+  };
+
   return (
     <div>
       <div className="card">
@@ -527,22 +554,59 @@ function DailySchedule() {
                 <form onSubmit={handleScheduleService}>
                   <div className="mb-4">
                     <label className="block text-sm font-medium mb-2">Client *</label>
-                    <select 
-                      value={scheduleForm.client?.id || ''} 
-                      onChange={(e) => {
-                        const selectedClient = clients.find(c => c.id === parseInt(e.target.value));
-                        handleClientChange(selectedClient);
-                      }}
-                      className="w-full p-3 border border-gray-300 rounded-md"
-                      required
-                    >
-                      <option value="">Select a client...</option>
-                      {clients.map(client => (
-                        <option key={client.id} value={client.id}>
-                          {client.name} - {client.area} - {client.phone}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={clientSearchQuery}
+                        onChange={(e) => handleClientSearch(e.target.value)}
+                        onFocus={() => {
+                          if (clientSearchQuery.trim()) {
+                            setShowClientResults(true);
+                          }
+                        }}
+                        placeholder="Search for a client..."
+                        className="w-full p-4 text-base border border-gray-300 rounded-lg"
+                        style={{ fontSize: '16px', minHeight: '48px' }}
+                        required
+                      />
+                      {scheduleForm.client && (
+                        <button
+                          type="button"
+                          onClick={clearClientSelection}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500"
+                          style={{ fontSize: '20px', minHeight: '44px', minWidth: '44px' }}
+                        >
+                          ✕
+                        </button>
+                      )}
+
+                      {/* Client Search Results */}
+                      {showClientResults && !scheduleForm.client && (
+                        <div className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg shadow-lg mt-1 max-h-64 overflow-y-auto">
+                          {clients
+                            .filter(client => {
+                              const query = clientSearchQuery.toLowerCase();
+                              return (
+                                client.name.toLowerCase().includes(query) ||
+                                client.phone.includes(query) ||
+                                client.address.toLowerCase().includes(query)
+                              );
+                            })
+                            .map((client) => (
+                              <button
+                                key={client.id}
+                                type="button"
+                                onClick={() => selectClientFromSearch(client)}
+                                className="w-full p-4 text-left hover:bg-gray-50 border-b border-gray-200 last:border-b-0"
+                                style={{ minHeight: '60px' }}
+                              >
+                                <div className="font-semibold text-base">{client.name}</div>
+                                <div className="text-sm text-gray-600">{client.area} • {client.phone}</div>
+                              </button>
+                            ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 mb-4">
