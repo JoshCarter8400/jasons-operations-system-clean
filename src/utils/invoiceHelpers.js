@@ -50,7 +50,15 @@ export async function createCollectingInvoice(clientId, clientData) {
     };
 
     const newInvoice = await insertInvoiceWithNumber(invoiceData);
-    return newInvoice;
+
+    // CRITICAL FIX: Verify invoice exists in database before returning
+    // This ensures the INSERT transaction is fully committed
+    const verifiedInvoice = await getInvoiceWithLineItems(newInvoice.id);
+    if (!verifiedInvoice) {
+      throw new Error(`Failed to verify invoice ${newInvoice.id} in database`);
+    }
+
+    return verifiedInvoice;
   } catch (error) {
     console.error('Error creating collecting invoice:', error);
     throw new Error('Failed to create collecting invoice');

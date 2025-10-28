@@ -829,7 +829,15 @@ export const DataProvider = ({ children }) => {
       console.log(`📄 Getting collecting invoice for target client ${targetClientId}...`);
       const invoice = await getCurrentCollectingInvoice(targetClientId);
       console.log(`📄 Got invoice ${invoice.id} for target client ${targetClientId}`);
-      
+
+      // CRITICAL FIX: Ensure invoice is fully committed to database before adding line items
+      // This prevents "invoice not found" errors when creating new collecting invoices
+      const verifiedInvoice = await getInvoiceWithLineItems(invoice.id);
+      if (!verifiedInvoice) {
+        throw new Error(`Invoice ${invoice.id} not found in database after creation`);
+      }
+      console.log(`✅ Invoice ${invoice.id} verified and ready for line items`);
+
       // Calculate service amount WITHOUT tax (tax calculated at invoice level)
       const serviceAmount = enhancedServiceData.quantity * enhancedServiceData.rate;
       
@@ -1313,8 +1321,15 @@ export const DataProvider = ({ children }) => {
       }
 
       // Default service data based on client profile
+      let description = serviceDetails.description || client.serviceType || 'Service';
+
+      // Append additional notes to description if provided
+      if (serviceDetails.additionalNotes && serviceDetails.additionalNotes.trim() !== '') {
+        description = `${description} - ${serviceDetails.additionalNotes}`;
+      }
+
       const serviceData = {
-        description: serviceDetails.description || client.serviceType || 'Service',
+        description: description,
         quantity: serviceDetails.quantity || 1,
         rate: serviceDetails.rate || parseFloat(client.price?.replace(/[^0-9.]/g, '') || '0'),
         completedDate: new Date().toISOString().split('T')[0]

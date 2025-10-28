@@ -54,7 +54,8 @@ function MarkServiceComplete({
         description: serviceDetails.description,
         rate: parseFloat(serviceDetails.rate) || 0,
         quantity: parseFloat(serviceDetails.quantity) || 1,
-        completedDate: new Date().toISOString().split('T')[0]
+        completedDate: new Date().toISOString().split('T')[0],
+        additionalNotes: serviceDetails.notes
       });
 
       // Close dialog and notify parent component
