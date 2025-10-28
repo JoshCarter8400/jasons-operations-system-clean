@@ -274,6 +274,8 @@ function DailySchedule() {
         await loadAppointmentsForDate(selectedDate);
       }
       setShowScheduleForm(false);
+      setClientSearchQuery('');
+      setShowClientResults(false);
       // Clear form completely for new appointments
       setScheduleForm({
         appointmentId: null,
@@ -315,6 +317,9 @@ function DailySchedule() {
       area: appointment.client.area,
       notes: appointment.notes || '',
     });
+    // Set client search query to show selected client name
+    setClientSearchQuery(appointment.client.name);
+    setShowClientResults(false);
     setShowScheduleForm(true);
   };
 
@@ -482,6 +487,9 @@ function DailySchedule() {
                     recurring: 'One-time',
                     recurringDay: 'Monday',
                   });
+                  // Clear client search when opening fresh modal
+                  setClientSearchQuery('');
+                  setShowClientResults(false);
                   setShowScheduleForm(true);
                 }}
                 className="btn btn-primary btn-sm"
@@ -942,6 +950,9 @@ function DailySchedule() {
                         recurring: 'One-time',
                         recurringDay: 'Monday',
                       });
+                      // Clear client search when opening fresh modal
+                      setClientSearchQuery('');
+                      setShowClientResults(false);
                       setShowScheduleForm(true);
                     }}
                     className="btn btn-primary"
