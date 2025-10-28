@@ -143,10 +143,7 @@ function InvoiceList() {
           paidDate: sentInvoice.paid_date,
           paymentMethod: sentInvoice.payment_method
         }, ...prev]);
-        
-        // Switch to Sent tab to show the result
-        setActiveTab('sent');
-        
+
         alert(`✅ Success!\n\nInvoice #${sentInvoice.invoice_number} sent to ${clientName}!\n\nThe invoice has been moved to the Sent tab.`);
       }
       
